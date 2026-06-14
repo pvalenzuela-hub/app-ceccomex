@@ -1,5 +1,6 @@
 .env
 .venv/
+.git/
 __pycache__/
 *.pyc
 node_modules/
@@ -9,4 +10,5 @@ build/
 coverage/
 *.sqlite3
 *.log
-doc-req/import/Importaciones - enero 2025.txt
+cargas/
+doc-req/
