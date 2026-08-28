@@ -1,0 +1,50 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cec-comex-redis
+    restart: unless-stopped
+    command: redis-server --appendonly no --save ""
+
+  backend:
+    build: ./backend
+    container_name: cec-comex-backend
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    depends_on:
+      - redis
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - cargas_data:/app/cargas
+      - static_data:/app/staticfiles
+
+  celery:
+    build: ./backend
+    container_name: cec-comex-celery
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    command: celery -A config worker -l info --concurrency=4
+    depends_on:
+      - redis
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - cargas_data:/app/cargas
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    container_name: cec-comex-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
+volumes:
+  cargas_data:
+  static_data:
