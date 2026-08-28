@@ -321,6 +321,27 @@ html, body {
   background: rgba(255, 255, 255, 0.12);
   padding: 6px 10px;
   border-radius: 999px;
+  font-size: 13px;
+}
+
+.module-status-good {
+  background: #0f7a43 !important;
+  color: #ffffff;
+}
+
+.module-status-warn {
+  background: #b42318 !important;
+  color: #ffffff;
+}
+
+.module-status-empty {
+  background: #475569 !important;
+  color: #ffffff;
+}
+
+.module-status-default {
+  background: #334155 !important;
+  color: #eaf1ff;
 }
 
 .hero-rail {
@@ -360,6 +381,32 @@ html, body {
 .status-card strong {
   font-size: 16px;
 }
+
+.legend-panel {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.legend-dot-green { background: #0f7a43; }
+.legend-dot-amber { background: #b42318; }
+.legend-dot-gray { background: #475569; }
 
 .topbar {
   display: flex;

@@ -22,7 +22,8 @@ def parse_txt_line(tipo_archivo: str, line: str) -> dict:
         numero_ident = pick(0)
         item = pick(1)
         fecha = pick(4)
-        aduana_codigo = pick(5)
+        aduana_codigo = pick(2)
+        comuna_importador_codigo = pick(5)
         via_transporte_codigo = pick(57)
         pais_origen_codigo = pick(54)
 
@@ -47,6 +48,7 @@ def parse_txt_line(tipo_archivo: str, line: str) -> dict:
             "item": item,
             "fecha": fecha,
             "aduana_codigo": aduana_codigo,
+            "comuna_importador_codigo": comuna_importador_codigo,
             "regimen_codigo": parts[28] if len(parts) > 28 else "",
             "pais_origen_codigo": pais_origen_codigo,
             "partida_arancelaria_codigo": partida_arancelaria,
@@ -130,9 +132,20 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
 
     if archivo_carga.tipo_archivo == "IMP":
         Importacion.objects.filter(archivo_origen=archivo_carga).delete()
+        buffer = []
+        batch_size = 5000
+        total = 0
+        processed = 0
+        ArchivoCarga.objects.filter(id=archivo_carga.id).update(
+            estado="PROCESANDO",
+            total_procesados=0,
+            total_ok=0,
+            total_error=0,
+            observacion=(archivo_carga.observacion + " | ").strip(" |") + "Materialización de importaciones iniciada",
+        )
         for row in staging_rows:
             data = row.data_json
-            Importacion.objects.create(
+            buffer.append(Importacion(
                 archivo_origen=archivo_carga,
                 periodo_anio=archivo_carga.periodo_anio,
                 periodo_mes=archivo_carga.periodo_mes,
@@ -140,6 +153,7 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
                 item=data.get("item", ""),
                 fecha_text=data.get("fecha", ""),
                 aduana_codigo=data.get("aduana_codigo", ""),
+                comuna_importador_codigo=data.get("comuna_importador_codigo", ""),
                 pais_origen_codigo=data.get("pais_origen_codigo", ""),
                 via_transporte_codigo=data.get("via_transporte_codigo", ""),
                 partida_arancelaria_codigo=data.get("partida_arancelaria_codigo", ""),
@@ -149,6 +163,26 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
                 valor_seguro=data.get("valor_seguro", ""),
                 valor_cif=data.get("valor_cif", ""),
                 payload_json=data,
+            ))
+            processed += 1
+            if len(buffer) >= batch_size:
+                Importacion.objects.bulk_create(buffer, batch_size=batch_size)
+                total += len(buffer)
+                ArchivoCarga.objects.filter(id=archivo_carga.id).update(
+                    total_ok=total,
+                    total_registros=total,
+                    total_procesados=processed,
+                    observacion=(archivo_carga.observacion + " | ").strip(" |") + f"Materializando importaciones: {processed}/{staging_rows.count()}",
+                )
+                buffer.clear()
+        if buffer:
+            Importacion.objects.bulk_create(buffer, batch_size=batch_size)
+            total += len(buffer)
+            ArchivoCarga.objects.filter(id=archivo_carga.id).update(
+                total_ok=total,
+                total_registros=total,
+                total_procesados=processed,
+                observacion=(archivo_carga.observacion + " | ").strip(" |") + f"Materializando importaciones: {processed}/{staging_rows.count()}",
             )
     elif archivo_carga.tipo_archivo == "EXP_BASE":
         Exportacion.objects.filter(archivo_origen=archivo_carga).delete()

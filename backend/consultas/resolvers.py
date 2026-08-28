@@ -6,7 +6,8 @@ def resolve_catalogo(grupo: str, codigo: str) -> dict:
     if not codigo:
         return {"codigo": "", "glosa": "", "vigente": False, "pendiente_revision": True}
 
-    item = CatalogoCodigo.objects.filter(grupo=grupo, codigo=codigo).first()
+    grupo_lookup = "comunas" if grupo == "comunas" else grupo
+    item = CatalogoCodigo.objects.filter(grupo=grupo_lookup, codigo=codigo).first()
     if item:
         return {
             "codigo": item.codigo,
@@ -31,6 +32,7 @@ def pendientes_importaciones(limit: int = 100) -> list[dict]:
     pendientes = []
     for field_name, grupo in [
         ("aduana_codigo", "aduanas"),
+        ("comuna_importador_codigo", "comunas"),
         ("pais_origen_codigo", "paises"),
         ("via_transporte_codigo", "via_transporte"),
         ("partida_arancelaria_codigo", "partidas"),

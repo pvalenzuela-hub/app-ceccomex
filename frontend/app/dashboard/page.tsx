@@ -21,6 +21,27 @@ const blocks = [
 
 const modules = ['Carga de ZIP', 'Procesamiento TXT', 'Staging', 'Consultas', 'Excel']
 
+function statusLabel(module: string, stats: { totalLoads: number; processingLoads: number; processedLoads: number; importRows: number | null; consultaRows: number | null }) {
+  if (module === 'Carga de ZIP') {
+    if (stats.processingLoads > 0) return 'Activo'
+    if (stats.processedLoads > 0) return 'Carga registrada'
+    return 'Vacío'
+  }
+  if (module === 'Procesamiento TXT') return stats.processingLoads > 0 ? 'En curso' : 'Listo'
+  if (module === 'Staging') return stats.processingLoads > 0 ? 'En proceso de lectura' : 'Listo'
+  if (module === 'Consultas') return stats.importRows && stats.importRows > 0 ? 'Con resultados' : 'Sin consultas'
+  if (module === 'Excel') return stats.importRows && stats.importRows > 0 ? 'Listo para exportar' : 'Sin datos'
+  return 'Sin estado'
+}
+
+function statusTone(module: string, stats: { totalLoads: number; processingLoads: number; processedLoads: number; importRows: number | null; consultaRows: number | null }) {
+  const label = statusLabel(module, stats)
+  if (label === 'En curso' || label === 'Activo' || label === 'En proceso de lectura') return 'module-status-warn'
+  if (label === 'Con resultados' || label === 'Listo para exportar' || label === 'Listo' || label === 'Carga registrada') return 'module-status-good'
+  if (label === 'Vacío' || label === 'Sin consultas') return 'module-status-empty'
+  return 'module-status-default'
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
@@ -120,8 +141,9 @@ export default function DashboardPage() {
     event.preventDefault()
     setUploadLoading(true)
     setUploadMessage('')
+    const form = event.currentTarget
 
-    const formData = new FormData(event.currentTarget)
+    const formData = new FormData(form)
     const file = formData.get('archivo') as File | null
     if (!file) {
       setUploadMessage('Selecciona un archivo ZIP.')
@@ -140,10 +162,11 @@ export default function DashboardPage() {
         method: 'POST',
         body: formData,
       })
-      const data = await response.json()
+      const rawText = await response.text()
+      const data = rawText ? JSON.parse(rawText) : {}
 
       if (!response.ok) {
-        setUploadMessage(data?.detail ?? JSON.stringify(data) ?? 'No se pudo registrar la carga.')
+        setUploadMessage(data?.detail ?? `No se pudo registrar la carga (${response.status})`)
         return
       }
 
@@ -152,7 +175,7 @@ export default function DashboardPage() {
       const nextUploads = [{ id: data.id, nombre_archivo: data.nombre_archivo, tipo_archivo: data.tipo_archivo, estado: data.estado, creado: data.creado }, ...uploads].slice(0, 20)
       setUploads(nextUploads)
       setSelectedUploadId(data.id)
-      event.currentTarget.reset()
+      form.reset()
 
       const listResponse = await fetch(`${apiBaseUrl}/api/comercio/archivos/`, { cache: 'no-store' })
       if (listResponse.ok) {
@@ -161,8 +184,8 @@ export default function DashboardPage() {
       }
 
       await loadStaging(data.id)
-    } catch {
-      setUploadMessage('No se pudo conectar con el backend.')
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : 'No se pudo conectar con el backend.')
     } finally {
       setUploadLoading(false)
     }
@@ -203,6 +226,12 @@ export default function DashboardPage() {
         <div className="status-card"><span>En proceso</span><strong>{systemStats.processingLoads}</strong></div>
         <div className="status-card"><span>Importaciones</span><strong>{systemStats.importRows ?? '...'}</strong></div>
         <div className="status-card"><span>Consultas</span><strong>{systemStats.consultaRows ?? '...'}</strong></div>
+      </section>
+
+      <section className="panel legend-panel">
+        <div className="legend-item"><span className="legend-dot legend-dot-green" />Listo / con datos</div>
+        <div className="legend-item"><span className="legend-dot legend-dot-amber" />En proceso</div>
+        <div className="legend-item"><span className="legend-dot legend-dot-gray" />Sin datos / vacío</div>
       </section>
 
       {activeUpload ? (
@@ -374,7 +403,7 @@ export default function DashboardPage() {
         {modules.map((module) => (
           <article className="module-card" key={module}>
             <span>{module}</span>
-            <strong>Pendiente</strong>
+            <strong className={statusTone(module, systemStats)}>{statusLabel(module, systemStats)}</strong>
           </article>
         ))}
       </section>

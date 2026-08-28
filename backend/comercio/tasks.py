@@ -1,4 +1,5 @@
 from celery import shared_task
+from django.core.exceptions import ObjectDoesNotExist
 
 from comercio.models import ArchivoCarga
 from comercio.processing import materialize_final_rows, store_staging_rows
@@ -17,7 +18,10 @@ def process_uploaded_archive(archivo_carga_id: int, txt_content: str) -> None:
 
 @shared_task
 def process_uploaded_archive_by_id(archivo_carga_id: int) -> None:
-    archivo_carga = ArchivoCarga.objects.get(id=archivo_carga_id)
+    try:
+        archivo_carga = ArchivoCarga.objects.get(id=archivo_carga_id)
+    except ObjectDoesNotExist:
+        return
     archivo_carga.estado = "PROCESANDO"
     archivo_carga.save(update_fields=["estado"])
     from zipfile import ZipFile
@@ -31,9 +35,12 @@ def process_uploaded_archive_by_id(archivo_carga_id: int) -> None:
         with zf.open(txt_files[0]) as txt_handle:
             content = txt_handle.read().decode("latin-1", errors="ignore")
     total_ok = store_staging_rows(archivo_carga, content)
+    archivo_carga.observacion = (archivo_carga.observacion + " | ").strip(" |") + "Staging completado, iniciando materialización final"
+    archivo_carga.save(update_fields=["observacion"])
     materialize_final_rows(archivo_carga)
     archivo_carga.total_registros = total_ok
     archivo_carga.total_procesados = total_ok
     archivo_carga.total_ok = total_ok
     archivo_carga.estado = "PROCESADO"
-    archivo_carga.save(update_fields=["estado", "total_registros", "total_procesados", "total_ok"])
+    archivo_carga.observacion = (archivo_carga.observacion + " | ").strip(" |") + "Materialización finalizada"
+    archivo_carga.save(update_fields=["estado", "total_registros", "total_procesados", "total_ok", "observacion"])

@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "catalogos",
     "comercio",
     "consultas",
+    "reportes",
     "django_celery_results",
 ]
 

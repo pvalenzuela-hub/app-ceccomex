@@ -9,12 +9,14 @@ type Row = {
   item: string
   fecha_text: string
   aduana_codigo: string
+  comuna_importador_codigo?: string
   pais_origen_codigo: string
   partida_arancelaria_codigo: string
   glosa_mercancia: string
   valor_fob: string
   creado: string
   aduana?: { codigo: string; glosa: string; pendiente_revision?: boolean }
+  comuna_importador?: { codigo: string; glosa: string; pendiente_revision?: boolean }
   pais_origen?: { codigo: string; glosa: string; pendiente_revision?: boolean }
   partida?: { codigo: string; glosa: string; pendiente_revision?: boolean }
 }
@@ -92,7 +94,8 @@ export default function ConsultasPage() {
 
     try {
       const response = await fetch(`${apiBaseUrl}/api/consultas/importaciones/?${params.toString()}`, { cache: 'no-store' })
-      const data = await response.json()
+      const rawText = await response.text()
+      const data = rawText ? JSON.parse(rawText) : {}
       const results = Array.isArray(data?.results) ? data.results : []
       setRows(results)
       setPage(Number(data?.page ?? nextPage))
@@ -100,9 +103,9 @@ export default function ConsultasPage() {
       setTotalCount(count)
       setResultCount(results.length)
       setMessage(response.ok ? `Resultados: ${count}` : 'No se pudo consultar.')
-    } catch {
+    } catch (error) {
       setRows([])
-      setMessage('No se pudo conectar con el backend.')
+      setMessage(error instanceof Error ? error.message : 'No se pudo conectar con el backend.')
     } finally {
       setLoading(false)
     }
@@ -111,10 +114,54 @@ export default function ConsultasPage() {
   async function loadPendingCodes() {
     try {
       const response = await fetch(`${apiBaseUrl}/api/consultas/pendientes-revision/?limit=20`, { cache: 'no-store' })
-      const data = await response.json()
+      const rawText = await response.text()
+      const data = rawText ? JSON.parse(rawText) : {}
       setPendingCodes(Array.isArray(data?.results) ? data.results : [])
     } catch {
       setPendingCodes([])
+    }
+  }
+
+  function buildQueryParams(nextFilters = filters, nextPage = page) {
+    const params = new URLSearchParams()
+    if (nextFilters.numero_ident) params.set('numero_ident', nextFilters.numero_ident)
+    if (nextFilters.periodo_anio) params.set('periodo_anio', nextFilters.periodo_anio)
+    if (nextFilters.periodo_mes) params.set('periodo_mes', nextFilters.periodo_mes)
+    if (nextFilters.aduana_codigo) params.set('aduana_codigo', nextFilters.aduana_codigo)
+    if (nextFilters.partida_arancelaria_codigo) params.set('partida_arancelaria_codigo', nextFilters.partida_arancelaria_codigo)
+    if (nextFilters.pais_origen_codigo) params.set('pais_origen_codigo', nextFilters.pais_origen_codigo)
+    if (nextFilters.fecha_desde) params.set('fecha_desde', nextFilters.fecha_desde)
+    if (nextFilters.fecha_hasta) params.set('fecha_hasta', nextFilters.fecha_hasta)
+    params.set('page', String(nextPage))
+    params.set('page_size', String(pageSize))
+    return params
+  }
+
+  async function exportResults() {
+    setLoading(true)
+    try {
+      const params = buildQueryParams(filters, page)
+      const response = await fetch(`${apiBaseUrl}/api/consultas/importaciones/exportar/?${params.toString()}`, {
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        setMessage(`No se pudo exportar (${response.status})`)
+        return
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'consultas_importaciones.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      setMessage('Excel generado correctamente.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo exportar.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -213,7 +260,11 @@ export default function ConsultasPage() {
                 <th>Número</th>
                 <th>Ítem</th>
                 <th>Fecha</th>
-                <th>Aduana</th>
+                <th>Aduana código</th>
+                <th>Aduana nombre</th>
+                <th>Comuna imp.</th>
+                <th>País código</th>
+                <th>País origen</th>
                 <th>Partida</th>
                 <th>FOB</th>
               </tr>
@@ -224,13 +275,17 @@ export default function ConsultasPage() {
                   <td>{row.numero_ident}</td>
                   <td>{row.item}</td>
                   <td>{row.fecha_text}</td>
-                  <td>{row.aduana?.glosa || row.aduana_codigo}</td>
+                  <td>{row.aduana_codigo}</td>
+                  <td>{row.aduana?.glosa || 'Sin glosa'}</td>
+                  <td>{row.comuna_importador_codigo || '—'}</td>
+                  <td>{row.pais_origen_codigo}</td>
+                  <td>{row.pais_origen?.glosa || 'Sin glosa'}</td>
                   <td>{row.partida?.glosa || row.partida_arancelaria_codigo}</td>
                   <td>{row.valor_fob}</td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6}>Sin resultados todavía.</td>
+                  <td colSpan={9}>Sin resultados todavía.</td>
                 </tr>
               )}
             </tbody>
@@ -239,6 +294,7 @@ export default function ConsultasPage() {
         <div className="upload-header" style={{ marginTop: '16px' }}>
           <div className="progress-text">{totalCount !== null ? `Mostrando ${rows.length} de ${totalCount}` : 'Sin búsqueda activa'}</div>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="button" className="link-button" disabled={loading || totalCount === null} onClick={exportResults}>Exportar Excel</button>
             <button type="button" className="link-button" disabled={page <= 1 || loading} onClick={() => runSearch(page - 1)}>Anterior</button>
             <button type="button" className="link-button" disabled={loading || totalCount === null || page * pageSize >= totalCount} onClick={() => runSearch(page + 1)}>Siguiente</button>
           </div>

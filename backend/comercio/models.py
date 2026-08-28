@@ -53,6 +53,7 @@ class Importacion(models.Model):
     fecha_text = models.CharField(max_length=32, blank=True)
     fecha_date = models.DateField(null=True, blank=True)
     aduana_codigo = models.CharField(max_length=32, blank=True)
+    comuna_importador_codigo = models.CharField(max_length=32, blank=True)
     pais_origen_codigo = models.CharField(max_length=32, blank=True)
     via_transporte_codigo = models.CharField(max_length=32, blank=True)
     partida_arancelaria_codigo = models.CharField(max_length=32, blank=True)
