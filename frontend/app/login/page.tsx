@@ -27,6 +27,7 @@ export default function LoginPage() {
     try {
       const response = await fetch(`${apiBaseUrl}/api/core/login-check/`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: String(formData.get('username') || ''),

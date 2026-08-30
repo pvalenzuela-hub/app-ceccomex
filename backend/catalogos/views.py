@@ -1,5 +1,6 @@
 from rest_framework.viewsets import ModelViewSet
 from django.db.models import Q
+from rest_framework.permissions import IsAuthenticated
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from catalogos.serializers import CatalogoCodigoSerializer, PartidaArancelariaSerializer
@@ -7,6 +8,7 @@ from catalogos.serializers import CatalogoCodigoSerializer, PartidaArancelariaSe
 
 class CatalogoCodigoViewSet(ModelViewSet):
     serializer_class = CatalogoCodigoSerializer
+    permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
         queryset = CatalogoCodigo.objects.all().order_by("grupo", "codigo")
@@ -21,4 +23,5 @@ class CatalogoCodigoViewSet(ModelViewSet):
 
 class PartidaArancelariaViewSet(ModelViewSet):
     serializer_class = PartidaArancelariaSerializer
+    permission_classes = (IsAuthenticated,)
     queryset = PartidaArancelaria.objects.all().order_by("codigo")

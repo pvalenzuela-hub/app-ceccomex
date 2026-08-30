@@ -1,12 +1,14 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, login
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from comercio.models import ArchivoCarga, Importacion
 from consultas.models import ConsultaGuardada
 
 
 @api_view(["GET"])
+@ensure_csrf_cookie
 def health_check(request):
     return Response({"status": "ok", "service": "cec-comex-backend"})
 
@@ -18,6 +20,7 @@ def login_check(request):
     user = authenticate(request, username=username, password=password)
     if not user:
         return Response({"ok": False, "message": "Credenciales inválidas"}, status=400)
+    login(request, user)
     return Response({"ok": True, "user": {"username": user.username, "email": user.email, "is_staff": user.is_staff}})
 
 

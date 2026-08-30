@@ -19,6 +19,10 @@ type Partida = Omit<CatalogoCodigo, 'grupo' | 'pendiente_revision'>
 const emptyCode = { grupo: 'ADUANA', codigo: '', glosa: '', vigente: true, origen: 'MANUAL', pendiente_revision: false, observacion: '' }
 const emptyPartida = { codigo: '', glosa: '', vigente: true, origen: 'MANUAL', observacion: '' }
 
+function csrfToken() {
+  return document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
+}
+
 export default function CatalogosPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
   const [section, setSection] = useState<'codigos' | 'partidas'>('codigos')
@@ -46,7 +50,9 @@ export default function CatalogosPage() {
     }
   }
 
-  useEffect(() => { loadCatalogs() }, [])
+  useEffect(() => {
+    fetch(`${apiBaseUrl}/api/health/`, { credentials: 'include' }).finally(loadCatalogs)
+  }, [])
 
   function resetForm() {
     setEditingId(null)
@@ -60,7 +66,8 @@ export default function CatalogosPage() {
     const endpoint = `${apiBaseUrl}/api/catalogos/${isCodes ? 'codigos' : 'partidas'}/${editingId ? `${editingId}/` : ''}`
     const response = await fetch(endpoint, {
       method: editingId ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
       body: JSON.stringify(isCodes ? codeForm : partidaForm),
     })
     if (!response.ok) {
@@ -75,7 +82,7 @@ export default function CatalogosPage() {
   async function remove(id: number) {
     if (!window.confirm('¿Eliminar este registro?')) return
     const endpoint = `${apiBaseUrl}/api/catalogos/${section}/${id}/`
-    const response = await fetch(endpoint, { method: 'DELETE' })
+    const response = await fetch(endpoint, { method: 'DELETE', credentials: 'include', headers: { 'X-CSRFToken': csrfToken() } })
     if (!response.ok) {
       setMessage('No se pudo eliminar el registro porque puede estar en uso.')
       return
