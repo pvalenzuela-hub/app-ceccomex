@@ -26,23 +26,23 @@ function csrfToken() {
 export default function CatalogosPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
   const [section, setSection] = useState<'codigos' | 'partidas'>('codigos')
-  const [codes, setCodes] = useState<CatalogoCodigo[]>([])
-  const [partidas, setPartidas] = useState<Partida[]>([])
+  const [rows, setRows] = useState<Array<CatalogoCodigo | Partida>>([])
+  const [totalRows, setTotalRows] = useState(0)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
   const [codeForm, setCodeForm] = useState(emptyCode)
   const [partidaForm, setPartidaForm] = useState(emptyPartida)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
 
-  async function loadCatalogs() {
+  async function loadCatalogs(nextPage = page, nextSearch = search) {
     setLoading(true)
     try {
-      const [codesResponse, partidasResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/api/catalogos/codigos/`, { cache: 'no-store' }),
-        fetch(`${apiBaseUrl}/api/catalogos/partidas/`, { cache: 'no-store' }),
-      ])
-      setCodes(codesResponse.ok ? await codesResponse.json() : [])
-      setPartidas(partidasResponse.ok ? await partidasResponse.json() : [])
+      const response = await fetch(`${apiBaseUrl}/api/catalogos/${section}/?page=${nextPage}&page_size=25&search=${encodeURIComponent(nextSearch)}`, { cache: 'no-store' })
+      const data = response.ok ? await response.json() : { count: 0, results: [] }
+      setRows(Array.isArray(data.results) ? data.results : [])
+      setTotalRows(Number(data.count ?? 0))
     } catch {
       setMessage('No se pudieron cargar los catálogos.')
     } finally {
@@ -50,9 +50,8 @@ export default function CatalogosPage() {
     }
   }
 
-  useEffect(() => {
-    fetch(`${apiBaseUrl}/api/health/`, { credentials: 'include' }).finally(loadCatalogs)
-  }, [])
+  useEffect(() => { fetch(`${apiBaseUrl}/api/health/`, { credentials: 'include' }) }, [apiBaseUrl])
+  useEffect(() => { loadCatalogs() }, [section, page])
 
   function resetForm() {
     setEditingId(null)
@@ -76,7 +75,7 @@ export default function CatalogosPage() {
     }
     setMessage(editingId ? 'Catálogo actualizado.' : 'Catálogo creado.')
     resetForm()
-    loadCatalogs()
+    loadCatalogs(page)
   }
 
   async function remove(id: number) {
@@ -89,10 +88,23 @@ export default function CatalogosPage() {
     }
     setMessage('Registro eliminado.')
     if (editingId === id) resetForm()
-    loadCatalogs()
+    loadCatalogs(page)
   }
 
-  const rows = section === 'codigos' ? codes : partidas
+  const totalPages = Math.max(1, Math.ceil(totalRows / 25))
+
+  function changeSection(nextSection: 'codigos' | 'partidas') {
+    setSection(nextSection)
+    setPage(1)
+    setSearch('')
+    resetForm()
+  }
+
+  function searchCatalogs(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPage(1)
+    loadCatalogs(1)
+  }
 
   return (
     <main className="page catalog-page">
@@ -104,8 +116,8 @@ export default function CatalogosPage() {
           <p className="lead">Mantén códigos, glosas y partidas disponibles antes de procesar importaciones.</p>
         </div>
         <div className="catalog-tabs">
-          <button className={section === 'codigos' ? 'is-active' : ''} onClick={() => { setSection('codigos'); resetForm() }}>Códigos generales</button>
-          <button className={section === 'partidas' ? 'is-active' : ''} onClick={() => { setSection('partidas'); resetForm() }}>Partidas arancelarias</button>
+          <button className={section === 'codigos' ? 'is-active' : ''} onClick={() => changeSection('codigos')}>Códigos generales</button>
+          <button className={section === 'partidas' ? 'is-active' : ''} onClick={() => changeSection('partidas')}>Partidas arancelarias</button>
         </div>
       </section>
 
@@ -132,11 +144,13 @@ export default function CatalogosPage() {
         </form>
 
         <section className="panel catalog-table-panel">
-          <div className="upload-header"><div><p className="eyebrow">Registros</p><h2>{loading ? 'Cargando...' : `${rows.length} disponibles`}</h2></div><button className="link-button" onClick={loadCatalogs}>Actualizar</button></div>
+          <div className="catalog-list-header"><div><p className="eyebrow">Registros</p><h2>{loading ? 'Cargando...' : `${totalRows.toLocaleString('es-CL')} disponibles`}</h2></div><button className="link-button" onClick={() => loadCatalogs()}>Actualizar</button></div>
+          <form className="catalog-search" onSubmit={searchCatalogs}><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código o glosa" /><button type="submit">Buscar</button></form>
           <div className="table-wrap"><table className="uploads-table"><thead><tr>{section === 'codigos' ? <th>Grupo</th> : null}<th>Código</th><th>Glosa</th><th>Estado</th><th /></tr></thead><tbody>
             {rows.map((row) => <tr key={row.id}><td>{section === 'codigos' ? (row as CatalogoCodigo).grupo : null}</td><td>{row.codigo}</td><td>{row.glosa || '-'}</td><td>{row.vigente ? 'Vigente' : 'Inactivo'}</td><td className="catalog-actions"><button onClick={() => { setEditingId(row.id); if (section === 'codigos') setCodeForm(row as CatalogoCodigo); else setPartidaForm(row as Partida) }}>Editar</button><button onClick={() => remove(row.id)}>Eliminar</button></td></tr>)}
-            {!loading && rows.length === 0 ? <tr><td colSpan={section === 'codigos' ? 5 : 4}>Aún no hay registros.</td></tr> : null}
+            {!loading && rows.length === 0 ? <tr><td colSpan={section === 'codigos' ? 5 : 4}>No se encontraron registros.</td></tr> : null}
           </tbody></table></div>
+          <footer className="catalog-pagination"><span>Página {page} de {totalPages}</span><div><button disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</button><button disabled={page === totalPages} onClick={() => setPage(page + 1)}>Siguiente</button></div></footer>
         </section>
       </section>
     </main>
