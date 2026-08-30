@@ -20,31 +20,52 @@ html, body {
 
 .page {
   min-height: 100vh;
-  padding: 40px 24px 56px;
+  padding: 40px 24px 56px 248px;
   max-width: 1180px;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .top-nav {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 210px;
+  z-index: 10;
   display: flex;
-  gap: 14px;
-  align-items: center;
-  justify-content: flex-end;
-  margin-bottom: 18px;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 28px 16px;
+  background: #102033;
+  border-right: 1px solid #203752;
 }
 
 .top-nav a {
-  color: var(--accent);
+  color: #d8e8ff;
   text-decoration: none;
   font-weight: 700;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: #eaf1ff;
-  border: 1px solid #cfe0ff;
+  padding: 10px 12px;
+  border-radius: 9px;
 }
 
 .top-nav a:hover {
-  background: #dce9ff;
+  background: #1f4b99;
+}
+
+.nav-brand {
+  margin: 0 0 28px;
+  color: white;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.nav-links {
+  display: grid;
+  gap: 6px;
+}
+
+.nav-login {
+  margin-top: auto;
+  color: #9fb8d6 !important;
 }
 
 .dashboard-shell {
@@ -602,7 +623,134 @@ h1 {
   text-decoration: underline;
 }
 
+.catalog-page {
+  display: grid;
+  gap: 24px;
+}
+
+.catalog-heading,
+.catalog-layout {
+  display: grid;
+  gap: 20px;
+}
+
+.catalog-heading {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
+.catalog-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.catalog-tabs button,
+.catalog-actions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: white;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.catalog-tabs .is-active,
+.catalog-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.catalog-layout {
+  grid-template-columns: minmax(260px, 0.38fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.catalog-form {
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 24px;
+}
+
+.catalog-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.catalog-form input:not([type="checkbox"]),
+.catalog-form textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px;
+  font: inherit;
+}
+
+.catalog-form .check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catalog-save {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.catalog-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.catalog-actions button:last-child {
+  color: #b42318;
+}
+
 @media (max-width: 800px) {
+  .page {
+    padding: 96px 18px 40px;
+  }
+
+  .top-nav {
+    width: 100%;
+    height: 76px;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    overflow-x: auto;
+  }
+
+  .nav-brand {
+    margin: 0;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  .nav-links {
+    display: flex;
+  }
+
+  .top-nav a {
+    padding: 8px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .nav-login {
+    margin-top: 0;
+  }
+
   .topbar,
   .hero-rail,
   .banner-panel,
@@ -627,5 +775,14 @@ h1 {
 
   .upload-form {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-heading,
+  .catalog-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-form {
+    position: static;
   }
 }
