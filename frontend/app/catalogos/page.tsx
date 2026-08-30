@@ -18,6 +18,9 @@ type Partida = Omit<CatalogoCodigo, 'grupo' | 'pendiente_revision'>
 
 const emptyCode = { grupo: 'ADUANA', codigo: '', glosa: '', vigente: true, origen: 'MANUAL', pendiente_revision: false, observacion: '' }
 const emptyPartida = { codigo: '', glosa: '', vigente: true, origen: 'MANUAL', observacion: '' }
+const catalogGroups = [
+  ['aduanas', 'Aduanas'], ['bancos_comerciales', 'Bancos comerciales'], ['clausulas_compra_venta', 'Cláusulas compra/venta'], ['articulos_denuncia', 'Artículos de denuncia'], ['comunas', 'Comunas'], ['formas_pago', 'Formas de pago'], ['formas_pago_gravamen', 'Pago gravámenes'], ['modalidades_venta', 'Modalidades de venta'], ['monedas', 'Monedas'], ['paises', 'Países'], ['puertos', 'Puertos'], ['regiones', 'Regiones'], ['tipos_bulto', 'Tipos de bulto'], ['tipos_cuenta', 'Tipos de cuenta'], ['tipos_carga', 'Tipos de carga'], ['tipos_operacion_din', 'Tipos operación DIN'], ['unidades_medida', 'Unidades de medida'], ['via_transporte', 'Vías de transporte'], ['origen_divisas', 'Origen divisas'], ['vistos_buenos', 'Vistos buenos'], ['regimen_importacion', 'Régimen importación'], ['claves_economicas', 'Claves económicas'], ['zonas_economicas', 'Zonas económicas'], ['claves_economicas_exportacion', 'Claves económicas exportación'],
+]
 
 function csrfToken() {
   return document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
@@ -30,6 +33,7 @@ export default function CatalogosPage() {
   const [totalRows, setTotalRows] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [group, setGroup] = useState('')
   const [codeForm, setCodeForm] = useState(emptyCode)
   const [partidaForm, setPartidaForm] = useState(emptyPartida)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -39,7 +43,7 @@ export default function CatalogosPage() {
   async function loadCatalogs(nextPage = page, nextSearch = search) {
     setLoading(true)
     try {
-      const response = await fetch(`${apiBaseUrl}/api/catalogos/${section}/?page=${nextPage}&page_size=25&search=${encodeURIComponent(nextSearch)}`, { cache: 'no-store' })
+      const response = await fetch(`${apiBaseUrl}/api/catalogos/${section}/?page=${nextPage}&page_size=25&search=${encodeURIComponent(nextSearch)}&grupo=${encodeURIComponent(group)}`, { cache: 'no-store' })
       const data = response.ok ? await response.json() : { count: 0, results: [] }
       setRows(Array.isArray(data.results) ? data.results : [])
       setTotalRows(Number(data.count ?? 0))
@@ -97,6 +101,7 @@ export default function CatalogosPage() {
     setSection(nextSection)
     setPage(1)
     setSearch('')
+    setGroup('')
     resetForm()
   }
 
@@ -145,7 +150,7 @@ export default function CatalogosPage() {
 
         <section className="panel catalog-table-panel">
           <div className="catalog-list-header"><div><p className="eyebrow">Registros</p><h2>{loading ? 'Cargando...' : `${totalRows.toLocaleString('es-CL')} disponibles`}</h2></div><button className="link-button" onClick={() => loadCatalogs()}>Actualizar</button></div>
-          <form className="catalog-search" onSubmit={searchCatalogs}><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código o glosa" /><button type="submit">Buscar</button></form>
+          <form className="catalog-search" onSubmit={searchCatalogs}>{section === 'codigos' ? <select value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Todos los catálogos</option>{catalogGroups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : null}<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código o glosa" /><button type="submit">Buscar</button></form>
           <div className="table-wrap"><table className="uploads-table"><thead><tr>{section === 'codigos' ? <th>Grupo</th> : null}<th>Código</th><th>Glosa</th><th>Estado</th><th /></tr></thead><tbody>
             {rows.map((row) => <tr key={row.id}><td>{section === 'codigos' ? (row as CatalogoCodigo).grupo : null}</td><td>{row.codigo}</td><td>{row.glosa || '-'}</td><td>{row.vigente ? 'Vigente' : 'Inactivo'}</td><td className="catalog-actions"><button onClick={() => { setEditingId(row.id); if (section === 'codigos') setCodeForm(row as CatalogoCodigo); else setPartidaForm(row as Partida) }}>Editar</button><button onClick={() => remove(row.id)}>Eliminar</button></td></tr>)}
             {!loading && rows.length === 0 ? <tr><td colSpan={section === 'codigos' ? 5 : 4}>No se encontraron registros.</td></tr> : null}
