@@ -49,6 +49,7 @@ class Importacion(models.Model):
     periodo_anio = models.PositiveSmallIntegerField(null=True, blank=True)
     periodo_mes = models.PositiveSmallIntegerField(null=True, blank=True)
     numero_ident = models.CharField(max_length=64, blank=True)
+    importador_probable_sugerido = models.ForeignKey("reportes.ImportadorProbable", null=True, blank=True, on_delete=models.SET_NULL, related_name="importaciones_sugeridas")
     item = models.CharField(max_length=32, blank=True)
     fecha_text = models.CharField(max_length=32, blank=True)
     fecha_date = models.DateField(null=True, blank=True)

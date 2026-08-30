@@ -131,6 +131,16 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
     staging_rows = ArchivoCargaStaging.objects.filter(archivo_carga=archivo_carga, procesado=True).order_by("nro_linea")
 
     if archivo_carga.tipo_archivo == "IMP":
+        from reportes.models import ImportadorProbable
+
+        def normalize_rut(value: str) -> str:
+            return "".join(char for char in str(value).upper() if char.isalnum())
+
+        importers = {}
+        for importer in ImportadorProbable.objects.all():
+            key = normalize_rut(f"{importer.rut}{importer.dv}")
+            if key and key not in importers:
+                importers[key] = importer
         Importacion.objects.filter(archivo_origen=archivo_carga).delete()
         buffer = []
         batch_size = 5000
@@ -145,11 +155,13 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
         )
         for row in staging_rows:
             data = row.data_json
+            numero_ident = data.get("numero_ident", "")
             buffer.append(Importacion(
                 archivo_origen=archivo_carga,
                 periodo_anio=archivo_carga.periodo_anio,
                 periodo_mes=archivo_carga.periodo_mes,
-                numero_ident=data.get("numero_ident", ""),
+                numero_ident=numero_ident,
+                importador_probable_sugerido=importers.get(normalize_rut(numero_ident)),
                 item=data.get("item", ""),
                 fecha_text=data.get("fecha", ""),
                 aduana_codigo=data.get("aduana_codigo", ""),
