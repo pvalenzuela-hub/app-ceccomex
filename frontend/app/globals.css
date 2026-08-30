@@ -684,12 +684,17 @@ h1 {
 }
 
 .catalog-form input:not([type="checkbox"]),
-.catalog-form textarea {
+.catalog-form textarea,
+.catalog-form select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 9px;
   padding: 10px;
   font: inherit;
+}
+
+.catalog-form small {
+  color: var(--muted);
 }
 
 .catalog-form .check-label {

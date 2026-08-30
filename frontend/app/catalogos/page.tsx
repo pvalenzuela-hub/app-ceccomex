@@ -130,7 +130,7 @@ export default function CatalogosPage() {
         <form className="panel catalog-form" onSubmit={save}>
           <div className="upload-header"><h2>{editingId ? 'Editar registro' : 'Nuevo registro'}</h2><button className="link-button" type="button" onClick={resetForm}>Limpiar</button></div>
           {section === 'codigos' ? <>
-            <label>Grupo<input value={codeForm.grupo} onChange={(event) => setCodeForm({ ...codeForm, grupo: event.target.value.toUpperCase() })} required /></label>
+            <label>Grupo<select value={codeForm.grupo} onChange={(event) => setCodeForm({ ...codeForm, grupo: event.target.value })} disabled={Boolean(editingId)} required>{catalogGroups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{editingId ? <small>El grupo no se puede modificar después de crear el código.</small> : null}</label>
             <label>Código<input value={codeForm.codigo} onChange={(event) => setCodeForm({ ...codeForm, codigo: event.target.value })} required /></label>
             <label>Glosa<textarea rows={3} value={codeForm.glosa} onChange={(event) => setCodeForm({ ...codeForm, glosa: event.target.value })} /></label>
             <label>Origen<input value={codeForm.origen} onChange={(event) => setCodeForm({ ...codeForm, origen: event.target.value.toUpperCase() })} required /></label>
