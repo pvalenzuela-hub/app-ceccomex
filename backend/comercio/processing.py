@@ -143,7 +143,7 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
                 importers[key] = importer
         Importacion.objects.filter(archivo_origen=archivo_carga).delete()
         buffer = []
-        batch_size = 5000
+        batch_size = 1000
         total = 0
         processed = 0
         ArchivoCarga.objects.filter(id=archivo_carga.id).update(
@@ -153,7 +153,8 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
             total_error=0,
             observacion=(archivo_carga.observacion + " | ").strip(" |") + "Materialización de importaciones iniciada",
         )
-        for row in staging_rows:
+        # iterator avoids caching hundreds of thousands of staging objects in a Celery worker.
+        for row in staging_rows.iterator(chunk_size=batch_size):
             data = row.data_json
             numero_ident = data.get("numero_ident", "")
             buffer.append(Importacion(
