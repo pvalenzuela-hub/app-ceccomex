@@ -72,6 +72,7 @@ export default function ConsultasPage() {
   const [favorites, setFavorites] = useState<Array<{ id: number; nombre: string; filtros_json: SearchFilters }>>([])
   const [favoriteName, setFavoriteName] = useState('')
   const [columnFilters, setColumnFilters] = useState({ numero: '', aduana: '', pais: '', partida: '', producto: '' })
+  const [partidaOptions, setPartidaOptions] = useState<Array<{ codigo: string; glosa: string }>>([])
   const [filters, setFilters] = useState<SearchFilters>({
     numero_ident: '',
     periodo_anio: '',
@@ -217,6 +218,17 @@ export default function ConsultasPage() {
     setMessage('Favorito guardado.')
   }
 
+  async function suggestPartidas(value: string) {
+    if (value.trim().length < 2) {
+      setPartidaOptions([])
+      return
+    }
+    const response = await fetch(`${apiBaseUrl}/api/catalogos/partidas/?search=${encodeURIComponent(value)}&page_size=12`)
+    if (!response.ok) return
+    const data = await response.json()
+    setPartidaOptions(Array.isArray(data.results) ? data.results : [])
+  }
+
   const visibleRows = rows.filter((row) =>
     row.numero_ident.includes(columnFilters.numero) &&
     row.aduana_codigo.toLowerCase().includes(columnFilters.aduana.toLowerCase()) &&
@@ -267,7 +279,7 @@ export default function ConsultasPage() {
             Aduana
             <input name="aduana_codigo" type="text" placeholder="Ej. 001" />
           </label>
-          <label>Arancel / descripción<input name="partida_busqueda" type="text" defaultValue={filters.partida_busqueda} placeholder="Ej. 8528 o monitor" /></label>
+          <label>Arancel / descripción<input name="partida_busqueda" type="text" list="partidas-sugeridas" value={filters.partida_busqueda} onChange={(event) => { const value = event.target.value; setFilters({ ...filters, partida_busqueda: value }); void suggestPartidas(value) }} placeholder="Ej. 8528 o motocicletas" /><datalist id="partidas-sugeridas">{partidaOptions.map((partida) => <option key={partida.codigo} value={partida.codigo} label={partida.glosa} />)}</datalist></label>
           <label>
             País origen
             <input name="pais_origen_codigo" type="text" placeholder="Ej. CL" />
