@@ -260,7 +260,7 @@ export default function ConsultasPage() {
           </div>
         </div>
 
-        <form className="upload-form" key={JSON.stringify(filters)} onSubmit={handleSearch}>
+        <form className="upload-form" onSubmit={handleSearch}>
           <label>
             Número de identificación
             <input name="numero_ident" type="text" placeholder="Ej. 12345678-9" />
@@ -279,7 +279,7 @@ export default function ConsultasPage() {
             Aduana
             <input name="aduana_codigo" type="text" placeholder="Ej. 001" />
           </label>
-          <label>Arancel / descripción<input name="partida_busqueda" type="text" list="partidas-sugeridas" value={filters.partida_busqueda} onChange={(event) => { const value = event.target.value; setFilters({ ...filters, partida_busqueda: value }); void suggestPartidas(value) }} placeholder="Ej. 8528 o motocicletas" /><datalist id="partidas-sugeridas">{partidaOptions.map((partida) => <option key={partida.codigo} value={partida.codigo} label={partida.glosa} />)}</datalist></label>
+          <label className="tariff-search">Arancel / descripción<input name="partida_busqueda" type="text" value={filters.partida_busqueda} onChange={(event) => { const value = event.target.value; setFilters({ ...filters, partida_busqueda: value }); void suggestPartidas(value) }} placeholder="Ej. 8528 o motocicletas" />{partidaOptions.length ? <div className="tariff-options">{partidaOptions.map((partida) => <button key={partida.codigo} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setFilters({ ...filters, partida_busqueda: partida.codigo }); setPartidaOptions([]) }}><strong>{partida.codigo}</strong><span>{partida.glosa}</span></button>)}</div> : null}</label>
           <label>
             País origen
             <input name="pais_origen_codigo" type="text" placeholder="Ej. CL" />
