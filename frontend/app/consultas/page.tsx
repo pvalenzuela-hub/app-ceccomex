@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import TopNav from '../components/top-nav'
 
 type Row = {
@@ -49,11 +49,14 @@ type SearchFilters = {
   numero_ident: string
   periodo_anio: string
   periodo_mes: string
+  periodo_mes_desde: string
+  periodo_mes_hasta: string
   aduana_codigo: string
   partida_arancelaria_codigo: string
   pais_origen_codigo: string
   fecha_desde: string
   fecha_hasta: string
+  partida_busqueda: string
 }
 
 export default function ConsultasPage() {
@@ -66,16 +69,29 @@ export default function ConsultasPage() {
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
   const [totalCount, setTotalCount] = useState<number | null>(null)
+  const [favorites, setFavorites] = useState<Array<{ id: number; nombre: string; filtros_json: SearchFilters }>>([])
+  const [favoriteName, setFavoriteName] = useState('')
+  const [columnFilters, setColumnFilters] = useState({ numero: '', aduana: '', pais: '', partida: '', producto: '' })
   const [filters, setFilters] = useState<SearchFilters>({
     numero_ident: '',
     periodo_anio: '',
     periodo_mes: '',
+    periodo_mes_desde: '',
+    periodo_mes_hasta: '',
     aduana_codigo: '',
     partida_arancelaria_codigo: '',
     pais_origen_codigo: '',
     fecha_desde: '',
     fecha_hasta: '',
+    partida_busqueda: '',
   })
+
+  async function loadFavorites() {
+    const response = await fetch(`${apiBaseUrl}/api/consultas/favoritos/`)
+    if (response.ok) setFavorites(await response.json())
+  }
+
+  useEffect(() => { void loadFavorites() }, [])
 
   async function runSearch(nextPage: number, nextFilters = filters) {
     setLoading(true)
@@ -84,8 +100,11 @@ export default function ConsultasPage() {
     if (nextFilters.numero_ident) params.set('numero_ident', nextFilters.numero_ident)
     if (nextFilters.periodo_anio) params.set('periodo_anio', nextFilters.periodo_anio)
     if (nextFilters.periodo_mes) params.set('periodo_mes', nextFilters.periodo_mes)
+    if (nextFilters.periodo_mes_desde) params.set('periodo_mes_desde', nextFilters.periodo_mes_desde)
+    if (nextFilters.periodo_mes_hasta) params.set('periodo_mes_hasta', nextFilters.periodo_mes_hasta)
     if (nextFilters.aduana_codigo) params.set('aduana_codigo', nextFilters.aduana_codigo)
     if (nextFilters.partida_arancelaria_codigo) params.set('partida_arancelaria_codigo', nextFilters.partida_arancelaria_codigo)
+    if (nextFilters.partida_busqueda) params.set('partida_busqueda', nextFilters.partida_busqueda)
     if (nextFilters.pais_origen_codigo) params.set('pais_origen_codigo', nextFilters.pais_origen_codigo)
     if (nextFilters.fecha_desde) params.set('fecha_desde', nextFilters.fecha_desde)
     if (nextFilters.fecha_hasta) params.set('fecha_hasta', nextFilters.fecha_hasta)
@@ -127,8 +146,11 @@ export default function ConsultasPage() {
     if (nextFilters.numero_ident) params.set('numero_ident', nextFilters.numero_ident)
     if (nextFilters.periodo_anio) params.set('periodo_anio', nextFilters.periodo_anio)
     if (nextFilters.periodo_mes) params.set('periodo_mes', nextFilters.periodo_mes)
+    if (nextFilters.periodo_mes_desde) params.set('periodo_mes_desde', nextFilters.periodo_mes_desde)
+    if (nextFilters.periodo_mes_hasta) params.set('periodo_mes_hasta', nextFilters.periodo_mes_hasta)
     if (nextFilters.aduana_codigo) params.set('aduana_codigo', nextFilters.aduana_codigo)
     if (nextFilters.partida_arancelaria_codigo) params.set('partida_arancelaria_codigo', nextFilters.partida_arancelaria_codigo)
+    if (nextFilters.partida_busqueda) params.set('partida_busqueda', nextFilters.partida_busqueda)
     if (nextFilters.pais_origen_codigo) params.set('pais_origen_codigo', nextFilters.pais_origen_codigo)
     if (nextFilters.fecha_desde) params.set('fecha_desde', nextFilters.fecha_desde)
     if (nextFilters.fecha_hasta) params.set('fecha_hasta', nextFilters.fecha_hasta)
@@ -172,16 +194,36 @@ export default function ConsultasPage() {
       numero_ident: String(formData.get('numero_ident') ?? '').trim(),
       periodo_anio: String(formData.get('periodo_anio') ?? '').trim(),
       periodo_mes: String(formData.get('periodo_mes') ?? '').trim(),
+      periodo_mes_desde: String(formData.get('periodo_mes_desde') ?? '').trim(),
+      periodo_mes_hasta: String(formData.get('periodo_mes_hasta') ?? '').trim(),
       aduana_codigo: String(formData.get('aduana_codigo') ?? '').trim(),
       partida_arancelaria_codigo: String(formData.get('partida_arancelaria_codigo') ?? '').trim(),
       pais_origen_codigo: String(formData.get('pais_origen_codigo') ?? '').trim(),
       fecha_desde: String(formData.get('fecha_desde') ?? '').trim(),
       fecha_hasta: String(formData.get('fecha_hasta') ?? '').trim(),
+      partida_busqueda: String(formData.get('partida_busqueda') ?? '').trim(),
     }
     setFilters(nextFilters)
     await runSearch(1, nextFilters)
     void loadPendingCodes()
   }
+
+  async function saveFavorite() {
+    if (!favoriteName.trim()) return setMessage('Asigna un nombre al favorito.')
+    const response = await fetch(`${apiBaseUrl}/api/consultas/favoritos/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: favoriteName.trim(), filtros_json: filters }) })
+    if (!response.ok) return setMessage('No se pudo guardar el favorito.')
+    setFavoriteName('')
+    await loadFavorites()
+    setMessage('Favorito guardado.')
+  }
+
+  const visibleRows = rows.filter((row) =>
+    row.numero_ident.includes(columnFilters.numero) &&
+    row.aduana_codigo.toLowerCase().includes(columnFilters.aduana.toLowerCase()) &&
+    row.pais_origen_codigo.toLowerCase().includes(columnFilters.pais.toLowerCase()) &&
+    `${row.partida_arancelaria_codigo} ${row.partida?.glosa ?? ''}`.toLowerCase().includes(columnFilters.partida.toLowerCase()) &&
+    row.glosa_mercancia.toLowerCase().includes(columnFilters.producto.toLowerCase())
+  )
 
   return (
     <main className="page dashboard-page">
@@ -206,7 +248,7 @@ export default function ConsultasPage() {
           </div>
         </div>
 
-        <form className="upload-form" onSubmit={handleSearch}>
+        <form className="upload-form" key={JSON.stringify(filters)} onSubmit={handleSearch}>
           <label>
             Número de identificación
             <input name="numero_ident" type="text" placeholder="Ej. 12345678-9" />
@@ -216,17 +258,16 @@ export default function ConsultasPage() {
             <input name="periodo_anio" type="number" placeholder="2025" />
           </label>
           <label>
-            Mes
+            Mes exacto
             <input name="periodo_mes" type="number" min="1" max="12" placeholder="1" />
           </label>
+          <label>Desde mes<select name="periodo_mes_desde" defaultValue={filters.periodo_mes_desde}><option value="">Todos</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2026, index).toLocaleString('es', { month: 'long' })}</option>)}</select></label>
+          <label>Hasta mes<select name="periodo_mes_hasta" defaultValue={filters.periodo_mes_hasta}><option value="">Todos</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2026, index).toLocaleString('es', { month: 'long' })}</option>)}</select></label>
           <label>
             Aduana
             <input name="aduana_codigo" type="text" placeholder="Ej. 001" />
           </label>
-          <label>
-            Partida
-            <input name="partida_arancelaria_codigo" type="text" placeholder="Ej. 0101" />
-          </label>
+          <label>Arancel / descripción<input name="partida_busqueda" type="text" defaultValue={filters.partida_busqueda} placeholder="Ej. 8528 o monitor" /></label>
           <label>
             País origen
             <input name="pais_origen_codigo" type="text" placeholder="Ej. CL" />
@@ -243,6 +284,7 @@ export default function ConsultasPage() {
         </form>
 
         {message ? <p className="login-message">{message}</p> : null}
+        <div className="favorite-bar"><select onChange={(event) => { const favorite = favorites.find((item) => item.id === Number(event.target.value)); if (favorite) { setFilters(favorite.filtros_json); void runSearch(1, favorite.filtros_json) } }} defaultValue=""><option value="">Mis favoritos</option>{favorites.map((favorite) => <option key={favorite.id} value={favorite.id}>{favorite.nombre}</option>)}</select><input value={favoriteName} onChange={(event) => setFavoriteName(event.target.value)} placeholder="Nombre del favorito" /><button type="button" onClick={saveFavorite}>Guardar filtros</button></div>
       </section>
 
       <section className="panel">
@@ -270,7 +312,8 @@ export default function ConsultasPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length ? rows.map((row) => (
+              <tr className="column-filters"><td><input placeholder="Filtrar" onChange={(event) => setColumnFilters({ ...columnFilters, numero: event.target.value })} /></td><td /><td /><td><input placeholder="Aduana" onChange={(event) => setColumnFilters({ ...columnFilters, aduana: event.target.value })} /></td><td /><td /><td><input placeholder="País" onChange={(event) => setColumnFilters({ ...columnFilters, pais: event.target.value })} /></td><td><input placeholder="Partida" onChange={(event) => setColumnFilters({ ...columnFilters, partida: event.target.value })} /></td><td><input placeholder="Producto" onChange={(event) => setColumnFilters({ ...columnFilters, producto: event.target.value })} /></td></tr>
+              {visibleRows.length ? visibleRows.map((row) => (
                 <tr key={row.id}>
                   <td>{row.numero_ident}</td>
                   <td>{row.item}</td>
@@ -285,7 +328,7 @@ export default function ConsultasPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={9}>Sin resultados todavía.</td>
+            <td colSpan={10}>Sin resultados todavía.</td>
                 </tr>
               )}
             </tbody>

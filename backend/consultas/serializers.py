@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from comercio.models import Importacion
+from consultas.models import ConsultaGuardada
 
 
 class ImportacionConsultaSerializer(serializers.ModelSerializer):
@@ -47,3 +48,10 @@ class ImportacionConsultaSerializer(serializers.ModelSerializer):
 
     def get_partida(self, obj):
         return self.context.get("resolver")("partidas", obj.partida_arancelaria_codigo) if self.context.get("resolver") else {"codigo": obj.partida_arancelaria_codigo, "glosa": "", "pendiente_revision": True}
+
+
+class ConsultaGuardadaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConsultaGuardada
+        fields = ("id", "nombre", "filtros_json", "creado")
+        read_only_fields = ("id", "creado")

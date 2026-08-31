@@ -1,12 +1,16 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.http import HttpResponse
+from django.db.models import Q
 from openpyxl import Workbook
 
 from comercio.models import Importacion
 from consultas.serializers import ImportacionConsultaSerializer
+from consultas.serializers import ConsultaGuardadaSerializer
 from consultas.resolvers import resolve_catalogo
 from consultas.resolvers import pendientes_importaciones
+from consultas.models import ConsultaGuardada
+from catalogos.models import PartidaArancelaria
 
 
 @api_view(["GET"])
@@ -28,12 +32,22 @@ def importaciones(request):
         qs = qs.filter(periodo_anio=periodo_anio)
     if periodo_mes:
         qs = qs.filter(periodo_mes=periodo_mes)
+    periodo_mes_desde = request.query_params.get("periodo_mes_desde")
+    periodo_mes_hasta = request.query_params.get("periodo_mes_hasta")
+    if periodo_mes_desde:
+        qs = qs.filter(periodo_mes__gte=periodo_mes_desde)
+    if periodo_mes_hasta:
+        qs = qs.filter(periodo_mes__lte=periodo_mes_hasta)
     if aduana_codigo:
         qs = qs.filter(aduana_codigo__icontains=aduana_codigo)
     if request.query_params.get("comuna_importador_codigo"):
         qs = qs.filter(comuna_importador_codigo__icontains=request.query_params.get("comuna_importador_codigo"))
     if partida_arancelaria_codigo:
         qs = qs.filter(partida_arancelaria_codigo__icontains=partida_arancelaria_codigo)
+    partida_busqueda = request.query_params.get("partida_busqueda")
+    if partida_busqueda:
+        codes = PartidaArancelaria.objects.filter(Q(codigo__icontains=partida_busqueda) | Q(glosa__icontains=partida_busqueda)).values_list("codigo", flat=True)
+        qs = qs.filter(partida_arancelaria_codigo__in=codes)
     if pais_origen_codigo:
         qs = qs.filter(pais_origen_codigo__icontains=pais_origen_codigo)
     if fecha_desde:
@@ -55,6 +69,21 @@ def importaciones(request):
 def pendientes_revision(request):
     limit = max(min(int(request.query_params.get("limit", "100") or "100"), 500), 1)
     return Response({"results": pendientes_importaciones(limit=limit)})
+
+
+@api_view(["GET", "POST"])
+def favoritos(request):
+    if request.method == "GET":
+        return Response(ConsultaGuardadaSerializer(ConsultaGuardada.objects.order_by("-creado"), many=True).data)
+    serializer = ConsultaGuardadaSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    return Response(ConsultaGuardadaSerializer(serializer.save()).data, status=201)
+
+
+@api_view(["DELETE"])
+def favorito_detalle(request, favorito_id: int):
+    ConsultaGuardada.objects.filter(id=favorito_id).delete()
+    return Response(status=204)
 
 
 @api_view(["GET"])
