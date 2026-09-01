@@ -18,11 +18,12 @@ IMPORT_COLUMNS = [
     ("pais_origen_codigo", "País de origen"), ("via_transporte_codigo", "Vía de transporte"),
     ("partida_arancelaria_codigo", "Arancel nacional"), ("glosa_mercancia", "Mercancía"),
     ("valor_fob", "Valor FOB"), ("valor_flete", "Valor flete"), ("valor_seguro", "Valor seguro"),
-    ("valor_cif", "Valor CIF"), ("raw:28", "REG_IMP - Régimen de importación"),
+    ("valor_cif", "Valor CIF"), ("raw:54", "REG_IMP - Régimen de importación"),
     ("raw:61", "VALEXFAB - Valor Ex-Fábrica"), ("raw:63", "MONGASFOB - Gastos hasta FOB"),
     ("raw:73", "TOT_PESO - Total peso"), ("raw:146", "CANT_MERC - Cantidad de mercancías"),
     ("raw:148", "MEDIDA - Unidad de medida"), ("raw:149", "PRE_UNIT - Precio unitario FOB"),
-    ("raw:162", "CIF_ITEM - Valor CIF del ítem"), ("raw:163", "ADVAL_ALA - Porcentaje advalorem"),
+    ("raw:158", "CIF_ITEM - Valor CIF del ítem"), ("raw:160", "ADVAL - Porcentaje advalorem"),
+    ("raw:162", "OTRO1"), ("raw:166", "OTRO2"), ("raw:170", "OTRO3"), ("raw:174", "OTRO4"),
 ]
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DIN_LABELS = (
@@ -53,7 +54,7 @@ DIN_LABELS = (
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "pais_origen_codigo", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_cif"]
+DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "comuna_importador_codigo", "pais_origen_codigo", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "raw:22", "raw:23", "raw:25", "raw:26", "raw:54", "raw:162", "raw:166", "raw:170", "raw:174"]
 
 
 def _selected_values(value):
