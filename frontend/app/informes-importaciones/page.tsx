@@ -15,7 +15,7 @@ function csrfToken() {
 const catalogFields = [
   ['aduana_codigo', 'Aduana', 'ADUANAS'], ['comuna_importador_codigo', 'Comuna importador', 'COMUNAS'],
   ['pais_origen_codigo', 'País de origen', 'PAISES'], ['via_transporte_codigo', 'Vía de transporte', 'VIAS_TRANSPORTE'],
-  ['regimenes', 'Régimen de importación', ''],
+  ['regimenes', 'Régimen de importación', 'REGIMENES'],
 ] as const
 
 export default function InformesImportacionesPage() {
@@ -105,7 +105,7 @@ export default function InformesImportacionesPage() {
     {message ? <p className="login-message">{message}</p> : null}
     <section className="report-layout">
       <section className="panel"><p className="eyebrow">Salida</p><h2>Columnas a exportar</h2><div className="column-picker">{columns.map((column) => <label key={column.key}><input type="checkbox" checked={selected.includes(column.key)} onChange={() => toggleColumn(column.key)} /> {column.label}</label>)}</div></section>
-      <section className="panel"><p className="eyebrow">Filtros</p><h2>Catálogos</h2><div className="report-filters">{catalogFields.map(([key, label, group]) => <label key={key}>{label}<select multiple value={filters[key] ?? []} onChange={(event) => setFilter(key, Array.from(event.target.selectedOptions, (option) => option.value))}>{key === 'regimenes' ? <><option value="">Sin régimen</option><option value="10">10</option><option value="11">11</option><option value="12">12</option></> : (catalogs[group] ?? []).map((item) => <option key={item.codigo} value={item.codigo}>{item.codigo} - {item.glosa}</option>)}</select></label>)}</div>
+       <section className="panel"><p className="eyebrow">Filtros</p><h2>Catálogos</h2><div className="report-filters">{catalogFields.map(([key, label, group]) => <label key={key}>{label}<select multiple value={filters[key] ?? []} onChange={(event) => setFilter(key, Array.from(event.target.selectedOptions, (option) => option.value))}>{(catalogs[group] ?? []).map((item) => <option key={item.codigo} value={item.codigo}>{item.codigo} - {item.glosa}</option>)}</select></label>)}</div>
        <label className="tariff-search">Arancel por código o glosa<input value={partidaText} onChange={(event) => void searchPartidas(event.target.value)} placeholder="Ej. 8528 o motocicletas" />{partidas.length ? <div className="tariff-options tariff-options-multi">{partidas.map((partida) => { const selectedPartida = (filters.partidas ?? []).includes(partida.codigo); return <button key={partida.codigo} type="button" onClick={() => setFilter('partidas', selectedPartida ? (filters.partidas ?? []).filter((item) => item !== partida.codigo) : [...(filters.partidas ?? []), partida.codigo])}><input type="checkbox" checked={selectedPartida} readOnly /><strong>{partida.codigo}</strong><span>{partida.glosa}</span></button> })}</div> : null}</label>
        {(filters.partidas ?? []).length ? <div className="selected-values">Aranceles: {(filters.partidas ?? []).map((codigo) => <button key={codigo} type="button" onClick={() => setFilter('partidas', (filters.partidas ?? []).filter((item) => item !== codigo))}>{codigo} ×</button>)}</div> : null}</section>
     </section>

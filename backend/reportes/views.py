@@ -111,7 +111,7 @@ def importadores_probables(request):
 def importaciones_configuracion(request):
     grupos = {
         key: list(CatalogoCodigo.objects.filter(grupo=grupo).values("codigo", "glosa").order_by("codigo"))
-        for key, grupo in {"ADUANAS": "aduanas", "COMUNAS": "comunas", "PAISES": "paises", "VIAS_TRANSPORTE": "via_transporte"}.items()
+        for key, grupo in {"ADUANAS": "aduanas", "COMUNAS": "comunas", "PAISES": "paises", "VIAS_TRANSPORTE": "via_transporte", "REGIMENES": "regimen_importacion"}.items()
     }
     return Response({"columnas": [{"key": key, "label": label, "default": key in DEFAULT_COLUMNS} for key, label in IMPORT_COLUMNS], "catalogos": grupos})
 
