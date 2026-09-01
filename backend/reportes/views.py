@@ -25,16 +25,33 @@ IMPORT_COLUMNS = [
     ("raw:162", "CIF_ITEM - Valor CIF del ítem"), ("raw:163", "ADVAL_ALA - Porcentaje advalorem"),
 ]
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DIN_LABELS = {
-    0: "NUMENCRIPTADO", 1: "TPO_DOCTO", 2: "ADU", 4: "FECVENCI", 5: "CODCOMUN",
-    6: "NUM_UNICO_IMPORTADOR", 21: "PA_ORIG", 22: "PA_ADQ", 23: "VIA_TRAN",
-    25: "PTO_EMB", 26: "PTO_DESEM", 28: "REG_IMP", 57: "FORM_PAGO", 64: "FOB",
-    67: "FLETE", 70: "SEGURO", 71: "TOT_PESO", 72: "CIF", 133: "DNOMBRE",
-    134: "DMARCA", 135: "DVARIEDAD", 136: "DOTRO1", 137: "DOTRO2", 146: "CANT_MERC",
-    148: "MEDIDA", 149: "PRE_UNIT", 157: "ARANC_NAC", 158: "CIF_ITEM", 160: "ADVAL", 161: "VALAD",
-}
-# Expose every official DIN position; known fields retain their official names.
-IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS.get(index, f"DIN columna {index + 1:03d}")) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
+DIN_LABELS = (
+    "NUMENCRIPTADO", "TIPO_DOCTO", "ADU", "FORM", "FECVENCI", "CODCOMUN",
+    "NUM_UNICO_IMPORTADOR", "CODPAISCON", "DESDIRALM", "CODCOMRS", "ADUCTROL", "NUMPLAZO",
+    "INDPARCIAL", "NUMHOJINS", "TOTINSUM", "CODALMA", "NUM_RS", "FEC_RS", "ADUA_RS", "NUMHOJANE",
+    "NUM_SEC", "PA_ORIG", "PA_ADQ", "VIA_TRAN", "TRANSB", "PTO_EMB", "PTO_DESEM", "TPO_CARGA",
+    "ALMACEN", "FEC_ALMAC", "FECRETIRO", "NU_REGR", "ANO_REG", "CODVISBUEN", "NUMREGLA", "NUMANORES",
+    "CODULTVB", "PAGO_GRAV", "FECTRA", "FECACEP", "GNOM_CIA_T", "CODPAISCIA", "NUMRUTCIA", "DIGVERCIA",
+    "NUM_MANIF", "NUM_MANIF1", "NUM_MANIF2", "FEC_MANIF", "NUM_CONOC", "FEC_CONOC", "NOMEMISOR", "NUMRUTEMI",
+    "DIGVEREMI", "GREG_IMP", "REG_IMP", "BCO_COM", "CODORDIV", "FORM_PAGO", "NUMDIAS", "VALEXFAB",
+    "MONEDA", "MONGASFOB", "CL_COMPRA", "TOT_ITEMS", "FOB", "TOT_HOJAS", "COD_FLE", "FLETE",
+    "TOT_BULTOS", "COD_SEG", "SEGURO", "TOT_PESO", "CIF", "NUM_AUT", "FEC_AUT", "GBCOCEN",
+    "ID_BULTOS", "TPO_BUL1", "CANT_BUL1", "TPO_BUL2", "CANT_BUL2", "TPO_BUL3", "CANT_BUL3", "TPO_BUL4",
+    "CANT_BUL4", "TPO_BUL5", "CANT_BUL5", "TPO_BUL6", "CANT_BUL6", "TPO_BUL7", "CANT_BUL7", "TPO_BUL8",
+    "CANT_BUL8", "CTA_OTRO", "MON_OTRO", "CTA_OTR1", "MON_OTR1", "CTA_OTR2", "MON_OTR2", "CTA_OTR3",
+    "MON_OTR3", "CTA_OTR4", "MON_OTR4", "CTA_OTR5", "MON_OTR5", "CTA_OTR6", "MON_OTR6", "CTA_OTR7",
+    "MON_OTR7", "MON_178", "MON_191", "FEC_501", "VAL_601", "FEC_502", "VAL_602", "FEC_503",
+    "VAL_603", "FEC_504", "VAL_604", "FEC_505", "VAL_605", "FEC_506", "VAL_606", "FEC_507",
+    "VAL_607", "TASA", "NCUOTAS", "ADU_DI", "NUM_DI", "FEC_DI", "MON_699", "MON_199",
+    "NUMITEM", "DNOMBRE", "DMARCA", "DVARIEDAD", "DOTRO1", "DOTRO2", "ATR-5", "ATR-6",
+    "SAJU-ITEM", "AJU-ITEM", "CANT-MERC", "MERMAS", "MEDIDA", "PRE-UNIT", "ARANC-ALA", "NUMCOR",
+    "NUMACU", "CODOBS1", "DESOBS1", "CODOBS2", "DESOBS2", "CODOBS3", "DESOBS3", "CODOBS4",
+    "DESOBS4", "ARANC-NAC", "CIF-ITEM", "ADVAL-ALA", "ADVAL", "VALAD", "OTRO1", "CTA1",
+    "SIGVAL1", "VAL1", "OTRO2", "CTA2", "SIGVAL2", "VAL2", "OTRO3", "CTA3",
+    "SIGVAL3", "VAL3", "OTRO4", "CTA4", "SIGVAL4", "VAL4",
+)
+# Expose every official DIN position while preserving friendly materialized columns above.
+IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "pais_origen_codigo", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_cif"]
 
