@@ -19,30 +19,21 @@ def parse_txt_line(tipo_archivo: str, line: str) -> dict:
         return ""
 
     if tipo_archivo == "IMP":
-        numero_ident = pick(0)
+        # Positions are zero-based and follow doc-req/import/descripcion-y-estructura-de-datos-din.xlsx.
+        numero_ident = pick(6)
         item = pick(1)
         fecha = pick(4)
         aduana_codigo = pick(2)
         comuna_importador_codigo = pick(5)
-        via_transporte_codigo = pick(57)
-        pais_origen_codigo = pick(54)
+        via_transporte_codigo = pick(23)
+        pais_origen_codigo = pick(21)
 
-        # Tabla fina por posición observada en la línea real:
-        # 133..137 -> glosa / descripción
-        # 145       -> tasa o coeficiente
-        # 146       -> partida arancelaria principal
-        # 147..150  -> códigos/cantidades auxiliares
-        # 157       -> segunda aparición de partida arancelaria
-        # 159       -> valor FOB observado
-        # 161       -> valor flete observado
-        # 163       -> valor seguro observado
-        # 165       -> valor CIF observado
-        partida_arancelaria = pick(146, 157)
-        glosa_mercancia = pick(133, 134, 135, 136, 137)
-        valor_fob = pick(159)
-        valor_flete = pick(161)
-        valor_seguro = pick(163)
-        valor_cif = pick(165)
+        partida_arancelaria = pick(157)
+        glosa_mercancia = pick(133)
+        valor_fob = pick(64)
+        valor_flete = pick(67)
+        valor_seguro = pick(70)
+        valor_cif = pick(72)
         return {
             "numero_ident": numero_ident,
             "item": item,
