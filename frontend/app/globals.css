@@ -822,6 +822,16 @@ h1 {
   color: var(--muted);
 }
 
+.selected-values button {
+  margin: 0 6px 6px 0;
+  border: 1px solid #c7d7f3;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #edf4ff;
+  color: var(--accent);
+  cursor: pointer;
+}
+
 .report-toolbar, .report-layout, .report-filters, .column-picker { display: grid; gap: 12px; }
 .report-toolbar { grid-template-columns: minmax(220px, 1fr) auto auto auto; align-items: center; }
 .report-toolbar select, .report-toolbar button, .modal input, .modal select { border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; font: inherit; background: white; }
