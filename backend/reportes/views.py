@@ -21,6 +21,18 @@ IMPORT_COLUMNS = [
     ("pa_orig_glosa", "PA_ORIG - descripción"), ("pa_adq_glosa", "PA_ADQ - descripción"),
     ("via_transporte_glosa", "VIA_TRAN - descripción"), ("pto_emb_glosa", "PTO_EMB - descripción"),
     ("pto_desem_glosa", "PTO_DESEM - descripción"), ("reg_imp_glosa", "REG_IMP - descripción"),
+    ("tipo_docto_glosa", "TIPO_DOCTO - descripción"), ("aductrol_glosa", "ADUCTROL - descripción"),
+    ("adua_rs_glosa", "ADUA_RS - descripción"), ("codpaiscon_glosa", "CODPAISCON - descripción"),
+    ("codcomrs_glosa", "CODCOMRS - descripción"), ("tpo_carga_glosa", "TPO_CARGA - descripción"),
+    ("codvisbuen_glosa", "CODVISBUEN - descripción"), ("codultvb_glosa", "CODULTVB - descripción"),
+    ("pago_grav_glosa", "PAGO_GRAV - descripción"), ("codpaiscia_glosa", "CODPAISCIA - descripción"),
+    ("bco_com_glosa", "BCO_COM - descripción"), ("codordiv_glosa", "CODORDIV - descripción"),
+    ("form_pago_glosa", "FORM_PAGO - descripción"), ("moneda_glosa", "MONEDA - descripción"),
+    ("cl_compra_glosa", "CL_COMPRA - descripción"), ("medida_glosa", "MEDIDA - descripción"),
+    ("tpo_bul1_glosa", "TPO_BUL1 - descripción"), ("tpo_bul2_glosa", "TPO_BUL2 - descripción"),
+    ("tpo_bul3_glosa", "TPO_BUL3 - descripción"), ("tpo_bul4_glosa", "TPO_BUL4 - descripción"),
+    ("tpo_bul5_glosa", "TPO_BUL5 - descripción"), ("tpo_bul6_glosa", "TPO_BUL6 - descripción"),
+    ("tpo_bul7_glosa", "TPO_BUL7 - descripción"), ("tpo_bul8_glosa", "TPO_BUL8 - descripción"),
     ("partida_arancelaria_codigo", "Arancel nacional"), ("glosa_mercancia", "Mercancía"),
     ("valor_fob", "Valor FOB"), ("valor_flete", "Valor flete"), ("valor_seguro", "Valor seguro"),
     ("valor_cif", "Valor CIF"), ("raw:54", "REG_IMP - Régimen de importación"),
@@ -81,7 +93,7 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
         qs = qs.filter(partida_arancelaria_codigo__in=tarifas)
     regimenes = _selected_values(filters.get("regimenes", []))
     if regimenes:
-        qs = qs.filter(payload_json__raw_columns__28__in=regimenes)
+            qs = qs.filter(payload_json__raw_columns__54__in=regimenes)
     return qs
 
 
@@ -98,6 +110,23 @@ def _column_value(row, key, catalogos):
         "pto_emb_glosa": ("puertos", raw_value(25)),
         "pto_desem_glosa": ("puertos", raw_value(26)),
         "reg_imp_glosa": ("regimen_importacion", raw_value(54)),
+        "tipo_docto_glosa": ("tipos_operacion_din", raw_value(1)),
+        "aductrol_glosa": ("aduanas", raw_value(10)),
+        "adua_rs_glosa": ("aduanas", raw_value(18)),
+        "codpaiscon_glosa": ("paises", raw_value(7)),
+        "codcomrs_glosa": ("comunas", raw_value(9)),
+        "tpo_carga_glosa": ("tipos_carga", raw_value(27)),
+        "codvisbuen_glosa": ("vistos_buenos", raw_value(33)),
+        "codultvb_glosa": ("vistos_buenos", raw_value(36)),
+        "pago_grav_glosa": ("formas_pago_gravamen", raw_value(37)),
+        "codpaiscia_glosa": ("paises", raw_value(41)),
+        "bco_com_glosa": ("bancos_comerciales", raw_value(55)),
+        "codordiv_glosa": ("origen_divisas", raw_value(56)),
+        "form_pago_glosa": ("formas_pago", raw_value(57)),
+        "moneda_glosa": ("monedas", raw_value(60)),
+        "cl_compra_glosa": ("clausulas_compra_venta", raw_value(62)),
+        "medida_glosa": ("unidades_medida", raw_value(144)),
+        **{f"tpo_bul{number}_glosa": ("tipos_bulto", raw_value(77 + (number - 1) * 2)) for number in range(1, 9)},
     }
     if key in glosa_fields:
         grupo, codigo = glosa_fields[key]
@@ -179,7 +208,7 @@ def exportar_informe_importaciones(request):
     sheet.append([IMPORT_COLUMN_MAP[key] for key in columns])
     catalogos = {
         grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa"))
-        for grupo in ("aduanas", "comunas", "paises", "via_transporte", "puertos", "regimen_importacion")
+        for grupo in ("aduanas", "bancos_comerciales", "clausulas_compra_venta", "comunas", "formas_pago", "formas_pago_gravamen", "monedas", "origen_divisas", "paises", "puertos", "regimen_importacion", "tipos_bulto", "tipos_carga", "tipos_operacion_din", "unidades_medida", "via_transporte", "vistos_buenos")
     }
     for row in qs.iterator(chunk_size=1000):
         sheet.append([_column_value(row, key, catalogos) for key in columns])
