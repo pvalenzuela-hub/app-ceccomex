@@ -14,8 +14,10 @@ from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialD
 # Indexed fields retain the official DIN position as stored in payload_json.raw_columns.
 IMPORT_COLUMNS = [
     ("numero_ident", "Nº identificador"), ("item", "Ítem"), ("fecha_text", "Fecha"),
-    ("aduana_codigo", "Código aduana"), ("comuna_importador_codigo", "Comuna importador"),
-    ("pais_origen_codigo", "País de origen"), ("via_transporte_codigo", "Vía de transporte"),
+    ("aduana_codigo", "Código aduana"), ("aduana_glosa", "Aduana - descripción"),
+    ("comuna_importador_codigo", "Comuna importador"), ("comuna_importador_glosa", "Comuna importador - descripción"),
+    ("pais_origen_codigo", "País de origen"), ("pais_origen_glosa", "País de origen - descripción"),
+    ("via_transporte_codigo", "Vía de transporte"),
     ("partida_arancelaria_codigo", "Arancel nacional"), ("glosa_mercancia", "Mercancía"),
     ("valor_fob", "Valor FOB"), ("valor_flete", "Valor flete"), ("valor_seguro", "Valor seguro"),
     ("valor_cif", "Valor CIF"), ("raw:54", "REG_IMP - Régimen de importación"),
@@ -54,7 +56,7 @@ DIN_LABELS = (
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "comuna_importador_codigo", "pais_origen_codigo", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "raw:22", "raw:23", "raw:25", "raw:26", "raw:54", "raw:162", "raw:166", "raw:170", "raw:174"]
+DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "raw:22", "raw:23", "raw:25", "raw:26", "raw:54", "raw:162", "raw:166", "raw:170", "raw:174"]
 
 
 def _selected_values(value):
@@ -80,7 +82,15 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
     return qs
 
 
-def _column_value(row, key):
+def _column_value(row, key, catalogos):
+    glosa_fields = {
+        "aduana_glosa": ("aduanas", row.aduana_codigo),
+        "comuna_importador_glosa": ("comunas", row.comuna_importador_codigo),
+        "pais_origen_glosa": ("paises", row.pais_origen_codigo),
+    }
+    if key in glosa_fields:
+        grupo, codigo = glosa_fields[key]
+        return catalogos.get(grupo, {}).get(str(codigo), "")
     if key.startswith("raw:"):
         raw = row.payload_json.get("raw_columns", [])
         index = int(key.split(":", 1)[1])
@@ -157,8 +167,12 @@ def exportar_informe_importaciones(request):
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(title="Importaciones")
     sheet.append([IMPORT_COLUMN_MAP[key] for key in columns])
+    catalogos = {
+        grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa"))
+        for grupo in ("aduanas", "comunas", "paises")
+    }
     for row in qs.iterator(chunk_size=1000):
-        sheet.append([_column_value(row, key) for key in columns])
+        sheet.append([_column_value(row, key, catalogos) for key in columns])
     response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = 'attachment; filename="informe_importaciones.xlsx"'
     workbook.save(response)
