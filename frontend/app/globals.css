@@ -801,7 +801,7 @@ h1 {
 
 .tariff-options button {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 110px minmax(0, 1fr);
   width: 100%;
   gap: 10px;
   border: 0;
@@ -814,12 +814,18 @@ h1 {
   cursor: pointer;
 }
 
+.tariff-options-multi button {
+  grid-template-columns: 22px 110px minmax(0, 1fr);
+}
+
 .tariff-options button:hover {
   background: #eaf1ff;
 }
 
 .tariff-options span {
   color: var(--muted);
+  line-height: 1.4;
+  white-space: normal;
 }
 
 .selected-values button {
