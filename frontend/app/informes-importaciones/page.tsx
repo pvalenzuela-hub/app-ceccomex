@@ -8,6 +8,10 @@ type Catalog = { codigo: string; glosa: string }
 type Filters = Record<string, string[]>
 type Rubro = { id: number; nombre: string; configuracion_json: { columnas?: string[]; filtros?: Filters } }
 
+function csrfToken() {
+  return document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
+}
+
 const catalogFields = [
   ['aduana_codigo', 'Aduana', 'ADUANAS'], ['comuna_importador_codigo', 'Comuna importador', 'COMUNAS'],
   ['pais_origen_codigo', 'País de origen', 'PAISES'], ['via_transporte_codigo', 'Vía de transporte', 'VIAS_TRANSPORTE'],
@@ -37,6 +41,7 @@ export default function InformesImportacionesPage() {
   }
 
   useEffect(() => {
+    void fetch(`${api}/api/health/`, { credentials: 'include' })
     void (async () => {
       const response = await fetch(`${api}/api/reportes/importaciones/configuracion/`)
       if (!response.ok) return setMessage('No se pudo cargar la configuración.')
@@ -68,14 +73,14 @@ export default function InformesImportacionesPage() {
     if (!rubroName.trim()) return setMessage('Indique un nombre para el rubro.')
     const body = { nombre: rubroName.trim(), configuracion_json: { columnas: selected, filtros: filters } }
     const url = editing ? `${api}/api/reportes/importaciones/rubros/${editing.id}/` : `${api}/api/reportes/importaciones/rubros/`
-    const response = await fetch(url, { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const response = await fetch(url, { method: editing ? 'PUT' : 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify(body) })
     if (!response.ok) return setMessage('No se pudo guardar el rubro.')
     setShowRubroDialog(false); setRubroName(''); setEditing(null); await loadRubros(); setMessage('Rubro guardado.')
   }
 
   async function deleteRubro(rubro: Rubro) {
     if (!window.confirm(`¿Eliminar el rubro "${rubro.nombre}"?`)) return
-    const response = await fetch(`${api}/api/reportes/importaciones/rubros/${rubro.id}/`, { method: 'DELETE' })
+    const response = await fetch(`${api}/api/reportes/importaciones/rubros/${rubro.id}/`, { method: 'DELETE', credentials: 'include', headers: { 'X-CSRFToken': csrfToken() } })
     if (response.ok) { await loadRubros(); setMessage('Rubro eliminado.') }
   }
 
