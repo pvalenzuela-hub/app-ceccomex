@@ -86,8 +86,9 @@ export default function InformesImportacionesPage() {
   }
 
   async function execute() {
-    const response = await fetch(`${api}/api/reportes/importaciones/exportar/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ columnas: selected, filtros: filters, periodo_mes: periodoMes, periodo_anio: periodoAnio }) })
-    if (!response.ok) return setMessage('No se pudo generar el Excel.')
+    await fetch(`${api}/api/health/`, { credentials: 'include' })
+    const response = await fetch(`${api}/api/reportes/importaciones/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ columnas: selected, filtros: filters, periodo_mes: periodoMes, periodo_anio: periodoAnio }) })
+    if (!response.ok) return setMessage(`No se pudo generar el Excel (${response.status}).`)
     const url = URL.createObjectURL(await response.blob())
     const link = document.createElement('a'); link.href = url; link.download = `informe_importaciones_${periodoAnio}_${periodoMes}.xlsx`; link.click(); URL.revokeObjectURL(url)
     setShowRunDialog(false); setMessage('Excel generado correctamente.')
