@@ -13,7 +13,7 @@ from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialD
 
 # Indexed fields retain the official DIN position as stored in payload_json.raw_columns.
 IMPORT_COLUMNS = [
-    ("numero_ident", "Nº identificador"), ("item", "Ítem"), ("fecha_text", "Fecha"),
+    ("numero_ident", "Nº identificador"), ("importador_probable", "Importador probable sugerido"), ("item", "Ítem"), ("fecha_text", "Fecha"),
     ("aduana_codigo", "Código aduana"), ("aduana_glosa", "Aduana - descripción"),
     ("comuna_importador_codigo", "Comuna importador"), ("comuna_importador_glosa", "Comuna importador - descripción"),
     ("pais_origen_codigo", "País de origen"), ("pais_origen_glosa", "País de origen - descripción"),
@@ -71,7 +71,7 @@ DIN_LABELS = (
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
+DEFAULT_COLUMNS = ["numero_ident", "importador_probable", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
 
 
 def _selected_values(value):
@@ -79,7 +79,7 @@ def _selected_values(value):
 
 
 def _filtered_importaciones(filters, periodo_anio, periodo_mes):
-    qs = Importacion.objects.order_by("-creado")
+    qs = Importacion.objects.select_related("importador_probable_sugerido").order_by("-creado")
     if periodo_anio:
         qs = qs.filter(periodo_anio=periodo_anio)
     if periodo_mes:
@@ -98,6 +98,8 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
 
 
 def _column_value(row, key, catalogos):
+    if key == "importador_probable":
+        return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else ""
     raw = row.payload_json.get("raw_columns", [])
     raw_value = lambda index: raw[index] if index < len(raw) else ""
     glosa_fields = {
