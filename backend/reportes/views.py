@@ -18,6 +18,9 @@ IMPORT_COLUMNS = [
     ("comuna_importador_codigo", "Comuna importador"), ("comuna_importador_glosa", "Comuna importador - descripción"),
     ("pais_origen_codigo", "País de origen"), ("pais_origen_glosa", "País de origen - descripción"),
     ("via_transporte_codigo", "Vía de transporte"),
+    ("pa_orig_glosa", "PA_ORIG - descripción"), ("pa_adq_glosa", "PA_ADQ - descripción"),
+    ("via_transporte_glosa", "VIA_TRAN - descripción"), ("pto_emb_glosa", "PTO_EMB - descripción"),
+    ("pto_desem_glosa", "PTO_DESEM - descripción"), ("reg_imp_glosa", "REG_IMP - descripción"),
     ("partida_arancelaria_codigo", "Arancel nacional"), ("glosa_mercancia", "Mercancía"),
     ("valor_fob", "Valor FOB"), ("valor_flete", "Valor flete"), ("valor_seguro", "Valor seguro"),
     ("valor_cif", "Valor CIF"), ("raw:54", "REG_IMP - Régimen de importación"),
@@ -56,7 +59,7 @@ DIN_LABELS = (
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "raw:22", "raw:23", "raw:25", "raw:26", "raw:54", "raw:162", "raw:166", "raw:170", "raw:174"]
+DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
 
 
 def _selected_values(value):
@@ -83,18 +86,25 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
 
 
 def _column_value(row, key, catalogos):
+    raw = row.payload_json.get("raw_columns", [])
+    raw_value = lambda index: raw[index] if index < len(raw) else ""
     glosa_fields = {
         "aduana_glosa": ("aduanas", row.aduana_codigo),
         "comuna_importador_glosa": ("comunas", row.comuna_importador_codigo),
         "pais_origen_glosa": ("paises", row.pais_origen_codigo),
+        "pa_orig_glosa": ("paises", raw_value(21)),
+        "pa_adq_glosa": ("paises", raw_value(22)),
+        "via_transporte_glosa": ("via_transporte", raw_value(23)),
+        "pto_emb_glosa": ("puertos", raw_value(25)),
+        "pto_desem_glosa": ("puertos", raw_value(26)),
+        "reg_imp_glosa": ("regimen_importacion", raw_value(54)),
     }
     if key in glosa_fields:
         grupo, codigo = glosa_fields[key]
         return catalogos.get(grupo, {}).get(str(codigo), "")
     if key.startswith("raw:"):
-        raw = row.payload_json.get("raw_columns", [])
         index = int(key.split(":", 1)[1])
-        return raw[index] if index < len(raw) else ""
+        return raw_value(index)
     return getattr(row, key, "")
 
 
@@ -169,7 +179,7 @@ def exportar_informe_importaciones(request):
     sheet.append([IMPORT_COLUMN_MAP[key] for key in columns])
     catalogos = {
         grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa"))
-        for grupo in ("aduanas", "comunas", "paises")
+        for grupo in ("aduanas", "comunas", "paises", "via_transporte", "puertos", "regimen_importacion")
     }
     for row in qs.iterator(chunk_size=1000):
         sheet.append([_column_value(row, key, catalogos) for key in columns])
