@@ -71,10 +71,11 @@ export default function InformesImportacionesPage() {
 
   async function saveRubro() {
     if (!rubroName.trim()) return setMessage('Indique un nombre para el rubro.')
+    await fetch(`${api}/api/health/`, { credentials: 'include' })
     const body = { nombre: rubroName.trim(), configuracion_json: { columnas: selected, filtros: filters } }
     const url = editing ? `${api}/api/reportes/importaciones/rubros/${editing.id}/` : `${api}/api/reportes/importaciones/rubros/`
     const response = await fetch(url, { method: editing ? 'PUT' : 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify(body) })
-    if (!response.ok) return setMessage('No se pudo guardar el rubro.')
+    if (!response.ok) return setMessage(`No se pudo guardar el rubro (${response.status}).`)
     setShowRubroDialog(false); setRubroName(''); setEditing(null); await loadRubros(); setMessage('Rubro guardado.')
   }
 
