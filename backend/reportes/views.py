@@ -25,6 +25,17 @@ IMPORT_COLUMNS = [
     ("raw:162", "CIF_ITEM - Valor CIF del ítem"), ("raw:163", "ADVAL_ALA - Porcentaje advalorem"),
 ]
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
+DIN_LABELS = {
+    0: "NUMENCRIPTADO", 1: "TPO_DOCTO", 2: "ADU", 4: "FECVENCI", 5: "CODCOMUN",
+    6: "NUM_UNICO_IMPORTADOR", 21: "PA_ORIG", 22: "PA_ADQ", 23: "VIA_TRAN",
+    25: "PTO_EMB", 26: "PTO_DESEM", 28: "REG_IMP", 57: "FORM_PAGO", 64: "FOB",
+    67: "FLETE", 70: "SEGURO", 71: "TOT_PESO", 72: "CIF", 133: "DNOMBRE",
+    134: "DMARCA", 135: "DVARIEDAD", 136: "DOTRO1", 137: "DOTRO2", 146: "CANT_MERC",
+    148: "MEDIDA", 149: "PRE_UNIT", 157: "ARANC_NAC", 158: "CIF_ITEM", 160: "ADVAL", 161: "VALAD",
+}
+# Expose every official DIN position; known fields retain their official names.
+IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS.get(index, f"DIN columna {index + 1:03d}")) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
+IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DEFAULT_COLUMNS = ["numero_ident", "item", "fecha_text", "aduana_codigo", "pais_origen_codigo", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_cif"]
 
 
