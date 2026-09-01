@@ -34,6 +34,7 @@ export default function InformesImportacionesPage() {
   const [periodoMes, setPeriodoMes] = useState(String(new Date().getMonth() + 1))
   const [periodoAnio, setPeriodoAnio] = useState(String(new Date().getFullYear()))
   const [message, setMessage] = useState('')
+  const [generating, setGenerating] = useState(false)
 
   async function loadRubros() {
     const response = await fetch(`${api}/api/reportes/importaciones/rubros/`)
@@ -86,12 +87,15 @@ export default function InformesImportacionesPage() {
   }
 
   async function execute() {
-    await fetch(`${api}/api/health/`, { credentials: 'include' })
-    const response = await fetch(`${api}/api/reportes/importaciones/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ columnas: selected, filtros: filters, periodo_mes: periodoMes, periodo_anio: periodoAnio }) })
-    if (!response.ok) return setMessage(`No se pudo generar el Excel (${response.status}).`)
-    const url = URL.createObjectURL(await response.blob())
-    const link = document.createElement('a'); link.href = url; link.download = `informe_importaciones_${periodoAnio}_${periodoMes}.xlsx`; link.click(); URL.revokeObjectURL(url)
-    setShowRunDialog(false); setMessage('Excel generado correctamente.')
+    setGenerating(true); setMessage('Generando el reporte. Su solicitud está siendo procesada...')
+    try {
+      await fetch(`${api}/api/health/`, { credentials: 'include' })
+      const response = await fetch(`${api}/api/reportes/importaciones/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ columnas: selected, filtros: filters, periodo_mes: periodoMes, periodo_anio: periodoAnio }) })
+      if (!response.ok) return setMessage(`No se pudo generar el Excel (${response.status}).`)
+      const url = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a'); link.href = url; link.download = `informe_importaciones_${periodoAnio}_${periodoMes}.xlsx`; link.click(); URL.revokeObjectURL(url)
+      setShowRunDialog(false); setMessage('Reporte generado y descargado correctamente.')
+    } finally { setGenerating(false) }
   }
 
   return <main className="page dashboard-page">
@@ -102,7 +106,7 @@ export default function InformesImportacionesPage() {
       <button type="button" onClick={() => { setEditing(null); setRubroName(''); setShowRubroDialog(true) }}>+ Crear rubro</button>
       {editing ? <button type="button" onClick={() => { setRubroName(editing.nombre); setShowRubroDialog(true) }}>... Actualizar rubro</button> : null}
       {editing ? <button type="button" className="link-button" onClick={() => deleteRubro(editing)}>x Eliminar rubro</button> : null}
-      <button type="button" className="report-run" disabled={!selected.length} onClick={() => setShowRunDialog(true)}>Generar Excel</button>
+      <button type="button" className="report-run" disabled={!selected.length || generating} onClick={() => setShowRunDialog(true)}>{generating ? 'Generando reporte...' : 'Generar Excel'}</button>
     </section>
     {message ? <p className="login-message">{message}</p> : null}
     <section className="report-layout">
@@ -112,6 +116,6 @@ export default function InformesImportacionesPage() {
        {(filters.partidas ?? []).length ? <div className="selected-values">Aranceles: {(filters.partidas ?? []).map((codigo) => <button key={codigo} type="button" onClick={() => setFilter('partidas', (filters.partidas ?? []).filter((item) => item !== codigo))}>{codigo} ×</button>)}</div> : null}</section>
     </section>
     {showRubroDialog ? <div className="modal-backdrop"><section className="modal"><h2>{editing ? 'Actualizar rubro' : 'Crear rubro'}</h2><label>Nombre<input value={rubroName} onChange={(event) => setRubroName(event.target.value)} autoFocus /></label><div><button type="button" onClick={saveRubro}>Guardar</button><button type="button" className="link-button" onClick={() => setShowRubroDialog(false)}>Cancelar</button></div></section></div> : null}
-    {showRunDialog ? <div className="modal-backdrop"><section className="modal"><h2>Periodo del informe</h2><label>Mes<select value={periodoMes} onChange={(event) => setPeriodoMes(event.target.value)}>{Array.from({ length: 12 }, (_, index) => <option key={index} value={index + 1}>{new Date(2026, index).toLocaleString('es-CL', { month: 'long' })}</option>)}</select></label><label>Año<input type="number" value={periodoAnio} onChange={(event) => setPeriodoAnio(event.target.value)} /></label><div><button type="button" onClick={() => void execute()}>Generar Excel</button><button type="button" className="link-button" onClick={() => setShowRunDialog(false)}>Cancelar</button></div></section></div> : null}
+    {showRunDialog ? <div className="modal-backdrop"><section className="modal"><h2>Periodo del informe</h2>{generating ? <p className="login-message">Generando el reporte. Su solicitud está siendo procesada...</p> : null}<label>Mes<select disabled={generating} value={periodoMes} onChange={(event) => setPeriodoMes(event.target.value)}>{Array.from({ length: 12 }, (_, index) => <option key={index} value={index + 1}>{new Date(2026, index).toLocaleString('es-CL', { month: 'long' })}</option>)}</select></label><label>Año<input disabled={generating} type="number" value={periodoAnio} onChange={(event) => setPeriodoAnio(event.target.value)} /></label><div><button type="button" disabled={generating} onClick={() => void execute()}>{generating ? 'Generando reporte...' : 'Generar Excel'}</button><button type="button" className="link-button" disabled={generating} onClick={() => setShowRunDialog(false)}>Cancelar</button></div></section></div> : null}
   </main>
 }
