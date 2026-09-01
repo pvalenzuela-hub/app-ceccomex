@@ -48,3 +48,13 @@ class ReporteSectorialDetalle(models.Model):
     class Meta:
         unique_together = ("reporte", "nro_linea")
         ordering = ["nro_linea"]
+
+
+class RubroImportacion(models.Model):
+    nombre = models.CharField(max_length=120, unique=True)
+    configuracion_json = models.JSONField(default=dict)
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nombre"]

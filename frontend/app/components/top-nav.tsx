@@ -7,6 +7,7 @@ export default function TopNav() {
       <div className="nav-links">
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/consultas">Consultas</Link>
+        <Link href="/informes-importaciones">Informes Importaciones</Link>
         <Link href="/catalogos">Catálogos</Link>
         <Link href="/reportes">Reportes</Link>
       </div>

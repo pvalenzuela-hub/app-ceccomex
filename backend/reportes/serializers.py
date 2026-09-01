@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from reportes.models import ImportadorProbable, ReporteSectorial, ReporteSectorialDetalle
+from reportes.models import ImportadorProbable, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
 
 
 class ReporteSectorialSerializer(serializers.ModelSerializer):
@@ -21,3 +21,10 @@ class ImportadorProbableSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImportadorProbable
         fields = ("id", "rut", "dv", "nombre", "origen")
+
+
+class RubroImportacionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RubroImportacion
+        fields = ("id", "nombre", "configuracion_json", "creado", "actualizado")
+        read_only_fields = ("id", "creado", "actualizado")
