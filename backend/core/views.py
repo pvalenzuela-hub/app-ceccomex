@@ -30,6 +30,14 @@ def logout_view(request):
     return Response({"ok": True})
 
 
+@api_view(["GET"])
+def session_user(request):
+    if not request.user.is_authenticated:
+        return Response({"detail": "Sesión no iniciada."}, status=401)
+    user = request.user
+    return Response({"username": user.username, "email": user.email, "is_staff": user.is_staff, "is_superuser": user.is_superuser})
+
+
 def _superuser_required(request):
     return request.user.is_authenticated and request.user.is_superuser
 

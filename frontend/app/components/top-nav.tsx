@@ -1,11 +1,12 @@
 "use client"
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 export default function TopNav() {
   const router = useRouter()
+  const pathname = usePathname()
   const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
   const [isSuperuser, setIsSuperuser] = useState(false)
 
@@ -18,6 +19,8 @@ export default function TopNav() {
     localStorage.removeItem('cec_user')
     router.replace('/login')
   }
+
+  if (pathname === '/login') return null
 
   return (
     <nav className="top-nav">
