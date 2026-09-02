@@ -592,7 +592,7 @@ html, body {
 }
 
 .login-brand-header { display: flex; align-items: center; gap: 18px; font-size: 11px; font-weight: 800; letter-spacing: 0.2em; }
-.login-brand-header img { width: 92px; height: auto; object-fit: contain; filter: brightness(0) invert(1); }
+.login-brand-header img { width: 92px; height: auto; padding: 5px 9px; border-radius: 4px; background: white; object-fit: contain; }
 .login-brand-copy { max-width: 610px; padding: 8vh 0; }
 .login-brand-copy p { margin: 0 0 18px; color: #a8d0ff; font-size: 14px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
 .login-brand-copy h1 { max-width: 600px; margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(38px, 4.3vw, 70px); font-weight: 400; letter-spacing: -0.045em; line-height: 1.02; }
