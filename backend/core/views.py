@@ -1,10 +1,13 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.utils import timezone
+from datetime import timedelta
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from comercio.models import ArchivoCarga, Importacion
 from consultas.models import ConsultaGuardada
+from core.models import PresenciaUsuario
 
 
 @api_view(["GET"])
@@ -26,6 +29,7 @@ def login_check(request):
 
 @api_view(["POST"])
 def logout_view(request):
+    PresenciaUsuario.objects.filter(session_key=request.session.session_key).delete()
     logout(request)
     return Response({"ok": True})
 
@@ -36,6 +40,28 @@ def session_user(request):
         return Response({"detail": "Sesión no iniciada."}, status=401)
     user = request.user
     return Response({"username": user.username, "email": user.email, "is_staff": user.is_staff, "is_superuser": user.is_superuser})
+
+
+def _registrar_presencia(request):
+    if not request.session.session_key:
+        request.session.save()
+    PresenciaUsuario.objects.update_or_create(session_key=request.session.session_key, defaults={"user": request.user})
+
+
+@api_view(["POST"])
+def presencia(request):
+    if not request.user.is_authenticated:
+        return Response({"detail": "Sesión no iniciada."}, status=401)
+    _registrar_presencia(request)
+    return Response({"ok": True})
+
+
+@api_view(["GET"])
+def usuarios_conectados(request):
+    if not _superuser_required(request):
+        return Response({"detail": "Se requiere rol superuser."}, status=403)
+    desde = timezone.now() - timedelta(minutes=2)
+    return Response({"conectados": PresenciaUsuario.objects.filter(last_seen__gte=desde).values("user_id").distinct().count()})
 
 
 def _superuser_required(request):

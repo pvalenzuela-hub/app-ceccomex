@@ -68,6 +68,10 @@ html, body {
   color: #9fb8d6 !important;
 }
 
+.nav-presence { display: flex; align-items: center; gap: 7px; margin-top: auto; padding: 10px 12px; color: #b9d6f3; font-size: 12px; font-weight: 700; }
+.nav-presence i { width: 7px; height: 7px; border-radius: 50%; background: #55cf8c; box-shadow: 0 0 0 3px rgba(85, 207, 140, .14); }
+.nav-presence + .nav-login { margin-top: 0; }
+
 .dashboard-shell {
   margin-bottom: 24px;
 }
