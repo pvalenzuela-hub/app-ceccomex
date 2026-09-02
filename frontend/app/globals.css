@@ -550,6 +550,73 @@ html, body {
   border-left: 4px solid var(--accent);
 }
 
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(390px, 0.55fr);
+  background: #f7f9fc;
+}
+
+.login-brand-panel {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  padding: 42px 8vw 42px 7vw;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: white;
+  overflow: hidden;
+  background: #0b2746 url('https://cec.cl/wp-content/uploads/2024/10/Bi-1.jpg') center / cover no-repeat;
+}
+
+.login-brand-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(112deg, rgba(5, 25, 49, 0.96) 8%, rgba(11, 48, 87, 0.83) 53%, rgba(11, 42, 74, 0.38));
+}
+
+.login-brand-panel::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 46vw;
+  height: 46vw;
+  right: -22vw;
+  bottom: -27vw;
+  border: 1px solid rgba(162, 207, 255, 0.3);
+  border-radius: 50%;
+  box-shadow: 0 0 0 52px rgba(111, 177, 255, 0.07), 0 0 0 104px rgba(111, 177, 255, 0.04);
+}
+
+.login-brand-header { display: flex; align-items: center; gap: 18px; font-size: 11px; font-weight: 800; letter-spacing: 0.2em; }
+.login-brand-header img { width: 92px; height: auto; object-fit: contain; filter: brightness(0) invert(1); }
+.login-brand-copy { max-width: 610px; padding: 8vh 0; }
+.login-brand-copy p { margin: 0 0 18px; color: #a8d0ff; font-size: 14px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.login-brand-copy h1 { max-width: 600px; margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(38px, 4.3vw, 70px); font-weight: 400; letter-spacing: -0.045em; line-height: 1.02; }
+.login-brand-copy > span { color: rgba(255, 255, 255, 0.78); font-size: 13px; letter-spacing: 0.08em; }
+.login-brand-line { width: 62px; height: 3px; margin: 28px 0 18px; background: #6fb1ff; }
+.login-brand-panel small { color: rgba(255, 255, 255, 0.65); letter-spacing: 0.08em; }
+
+.login-access-panel { min-height: 100vh; display: grid; place-items: center; padding: 44px; background: #f8fafc; }
+.login-access-content { width: min(100%, 380px); }
+.login-status { display: flex; align-items: center; gap: 8px; margin-bottom: 64px; color: #61718a; font-size: 12px; font-weight: 700; }
+.login-status i { width: 8px; height: 8px; border-radius: 50%; background: #27ae60; box-shadow: 0 0 0 4px rgba(39, 174, 96, 0.12); }
+.login-access-content .eyebrow { margin-bottom: 10px; color: #3777ba; }
+.login-access-content h2 { margin: 0; color: #102a47; font-family: Georgia, 'Times New Roman', serif; font-size: 42px; font-weight: 400; letter-spacing: -0.04em; }
+.login-access-content .lead { margin: 13px 0 26px; color: #65758a; line-height: 1.55; }
+.login-access-content .login-form { gap: 18px; margin-top: 0; }
+.login-access-content .login-form label { gap: 8px; color: #334861; font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.login-access-content .login-form input { padding: 14px 0; border: 0; border-bottom: 1px solid #cbd6e3; border-radius: 0; background: transparent; color: #102a47; outline: 0; transition: border-color 0.2s; }
+.login-access-content .login-form input:focus { border-color: #1f5d9f; }
+.login-access-content .login-form button { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 15px 18px; border-radius: 6px; background: #123c69; box-shadow: 0 10px 20px rgba(18, 60, 105, 0.18); transition: transform 0.2s, background 0.2s; }
+.login-access-content .login-form button:hover:not(:disabled) { background: #0c315a; transform: translateY(-1px); }
+.login-access-content .login-form button span { font-size: 20px; font-weight: 400; }
+.login-access-content .login-message { color: #b42318; }
+.login-help { margin: 42px 0 0; color: #8a99aa; font-size: 12px; text-align: center; }
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -932,4 +999,11 @@ h1 {
   }
 
   .report-toolbar, .report-layout, .report-filters { grid-template-columns: 1fr; }
+
+  .login-page { grid-template-columns: 1fr; }
+  .login-brand-panel { min-height: 340px; padding: 28px 28px 32px; }
+  .login-brand-copy { padding: 34px 0; }
+  .login-brand-copy h1 { font-size: clamp(34px, 10vw, 50px); }
+  .login-access-panel { min-height: auto; padding: 48px 28px 56px; }
+  .login-status { margin-bottom: 34px; }
 }

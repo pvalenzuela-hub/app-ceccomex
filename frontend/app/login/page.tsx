@@ -1,8 +1,6 @@
 "use client"
 
-import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
-import TopNav from '../components/top-nav'
 
 export default function LoginPage() {
   const [backendStatus, setBackendStatus] = useState('Verificando...')
@@ -49,39 +47,33 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="page login-page">
-      <TopNav />
-      <section className="topbar">
-        <div>
-          <p className="eyebrow">CEC COMEX Platform</p>
-          <h1>Acceso al sistema</h1>
-        </div>
-        <div className="status-pill">{backendStatus}</div>
+    <main className="login-page">
+      <section className="login-brand-panel">
+        <div className="login-brand-header"><img src="https://cec.cl/wp-content/uploads/2024/10/logo-1024x658.png" alt="CEC Comercio Exterior y Consultoría" /><span>COMEX PLATFORM</span></div>
+        <div className="login-brand-copy"><p>Inteligencia para comercio exterior</p><h1>Información clara para decisiones que cruzan fronteras.</h1><div className="login-brand-line" /><span>Importaciones · Exportaciones · Análisis de mercado</span></div>
+        <small>CEC S.A. · Santiago, Chile</small>
       </section>
 
-      <section className="hero-grid login-grid">
-        <article className="panel login-panel">
-          <h2>Iniciar sesión</h2>
-          <p className="lead">Ingresa con tu usuario de Django para acceder al panel interno.</p>
+      <section className="login-access-panel">
+        <div className="login-access-content">
+          <div className="login-status"><i />{backendStatus}</div>
+          <p className="eyebrow">Área privada</p>
+          <h2>Bienvenido</h2>
+          <p className="lead">Ingresa tus credenciales para acceder a CEC COMEX Platform.</p>
           <form className="login-form" onSubmit={handleSubmit}>
             <label>
               Usuario
-              <input name="username" placeholder="admin" autoComplete="username" />
+              <input required name="username" placeholder="Tu usuario" autoComplete="username" />
             </label>
             <label>
               Contraseña
-              <input name="password" type="password" placeholder="••••••••" autoComplete="current-password" />
+              <input required name="password" type="password" placeholder="••••••••" autoComplete="current-password" />
             </label>
-            <button type="submit" disabled={loginLoading}>{loginLoading ? 'Entrando...' : 'Entrar'}</button>
+            <button type="submit" disabled={loginLoading}>{loginLoading ? 'Validando acceso...' : 'Ingresar a la plataforma'}<span>→</span></button>
           </form>
           {loginMessage ? <p className="login-message">{loginMessage}</p> : null}
-        </article>
-
-        <article className="panel">
-          <h2>Estado</h2>
-          <p className="lead">{backendStatus}</p>
-          <p><Link href="/">Ir al panel interno</Link></p>
-        </article>
+          <p className="login-help">Acceso exclusivo para usuarios autorizados.</p>
+        </div>
       </section>
     </main>
   )
