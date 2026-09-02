@@ -67,6 +67,21 @@ def usuarios(request):
     return Response({"id": user.id, "username": user.username}, status=201)
 
 
+@api_view(["POST"])
+def cambiar_contrasena_usuario(request, user_id: int):
+    if not _superuser_required(request):
+        return Response({"detail": "Se requiere rol superuser."}, status=403)
+    password = str(request.data.get("password", ""))
+    if len(password) < 8:
+        return Response({"detail": "La contraseña debe tener al menos 8 caracteres."}, status=400)
+    user = get_user_model().objects.filter(id=user_id).first()
+    if not user:
+        return Response({"detail": "Usuario no encontrado."}, status=404)
+    user.set_password(password)
+    user.save(update_fields=["password"])
+    return Response({"ok": True})
+
+
 @api_view(["GET"])
 def system_metrics(request):
     return Response(
