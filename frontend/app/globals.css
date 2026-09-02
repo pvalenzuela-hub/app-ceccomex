@@ -923,7 +923,7 @@ h1 {
 .modal > div { display: flex; gap: 12px; align-items: center; }
 
 .report-page { gap: 18px; }
-.report-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
+.report-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
 .report-heading h1 { margin: 0; color: #102a47; font-size: 34px; letter-spacing: -0.04em; }
 .report-heading .lead { margin: 8px 0 0; }
 .report-selection-summary { display: flex; align-items: center; gap: 10px; min-width: 180px; padding: 13px 18px; border-left: 3px solid #4f96dc; background: #edf5ff; color: #45637f; }
