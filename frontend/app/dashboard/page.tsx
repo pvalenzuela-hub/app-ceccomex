@@ -132,7 +132,10 @@ export default function DashboardPage() {
     }
   }
 
-  function logout() {
+  async function logout() {
+    await fetch(`${apiBaseUrl}/api/health/`, { credentials: 'include' })
+    const csrfToken = document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
+    await fetch(`${apiBaseUrl}/api/core/logout/`, { method: 'POST', credentials: 'include', headers: { 'X-CSRFToken': csrfToken } })
     localStorage.removeItem('cec_user')
     router.replace('/login')
   }
@@ -216,7 +219,7 @@ export default function DashboardPage() {
           <div className="meta-chip">Sesión local</div>
           <div className="meta-chip">Carga pendiente</div>
           <button className="link-button" type="button" onClick={() => router.push('/consultas')}>Ir a consultas</button>
-          <button className="link-button" type="button" onClick={logout}>Cerrar sesión</button>
+          <button className="link-button" type="button" onClick={() => void logout()}>Cerrar sesión</button>
         </div>
       </section>
 
