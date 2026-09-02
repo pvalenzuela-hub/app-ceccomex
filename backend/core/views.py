@@ -82,6 +82,20 @@ def cambiar_contrasena_usuario(request, user_id: int):
     return Response({"ok": True})
 
 
+@api_view(["DELETE"])
+def eliminar_usuario(request, user_id: int):
+    if not _superuser_required(request):
+        return Response({"detail": "Se requiere rol superuser."}, status=403)
+    if request.user.id == user_id:
+        return Response({"detail": "No puede eliminar su propia cuenta."}, status=400)
+    user = get_user_model().objects.filter(id=user_id).first()
+    if not user:
+        return Response({"detail": "Usuario no encontrado."}, status=404)
+    username = user.username
+    user.delete()
+    return Response({"ok": True, "username": username})
+
+
 @api_view(["GET"])
 def system_metrics(request):
     return Response(
