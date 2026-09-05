@@ -76,6 +76,7 @@ export default function LoginPage() {
           </form>
           {loginMessage ? <p className="login-message">{loginMessage}</p> : null}
           <p className="login-help">Acceso exclusivo para usuarios autorizados.</p>
+          <p className="login-credit">Desarrollado por <a href="https://datnexia.com" target="_blank" rel="noreferrer">Datnexia.com</a> para CEC S.A. · Santiago · Chile</p>
         </div>
       </section>
     </main>

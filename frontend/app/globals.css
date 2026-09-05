@@ -620,6 +620,8 @@ html, body {
 .login-access-content .login-form button span { font-size: 20px; font-weight: 400; }
 .login-access-content .login-message { color: #b42318; }
 .login-help { margin: 42px 0 0; color: #8a99aa; font-size: 12px; text-align: center; }
+.login-credit { margin: 14px 0 0; color: #9ba8b7; font-size: 11px; text-align: center; }
+.login-credit a { color: #4c7fab; font-weight: 700; text-decoration: none; }
 
 .eyebrow {
   text-transform: uppercase;
