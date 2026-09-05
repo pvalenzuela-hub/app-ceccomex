@@ -1,5 +1,6 @@
 from django.http import HttpResponse
 from django.db.models import Q
+from django.core.paginator import Paginator
 from openpyxl import Workbook
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -7,7 +8,7 @@ from rest_framework.response import Response
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.models import Importacion
-from reportes.models import ImportadorProbable, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
+from reportes.models import ImportadorProbable, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
 from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialDetalleSerializer, ReporteSectorialSerializer, RubroImportacionSerializer
 
 
@@ -157,6 +158,18 @@ def importadores_probables(request):
     if query:
         rows = rows.filter(nombre__icontains=query)
     return Response(ImportadorProbableSerializer(rows[:100], many=True).data)
+
+
+@api_view(["GET"])
+def perfiles_importadores(request):
+    if not request.user.is_authenticated:
+        return Response({"detail": "Sesión no iniciada."}, status=status.HTTP_401_UNAUTHORIZED)
+    search = request.query_params.get("search", "").strip()
+    rows = PerfilImportador.objects.all()
+    if search:
+        rows = rows.filter(Q(rut__icontains=search) | Q(dv__icontains=search) | Q(nombre__icontains=search))
+    page = Paginator(rows.order_by("nombre"), 25).get_page(request.query_params.get("page", 1))
+    return Response({"count": page.paginator.count, "results": list(page.object_list.values("id", "rut", "dv", "nombre", "total_evidencias", "primer_periodo_anio", "primer_periodo_mes", "ultimo_periodo_anio", "ultimo_periodo_mes", "aranceles_json", "rubros_json"))})
 
 
 @api_view(["GET"])

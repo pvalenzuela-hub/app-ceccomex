@@ -15,6 +15,7 @@ type CatalogoCodigo = {
 }
 
 type Partida = Omit<CatalogoCodigo, 'grupo' | 'pendiente_revision'>
+type PerfilImportador = { id: number; rut: string; dv: string; nombre: string; total_evidencias: number; primer_periodo_anio: number; primer_periodo_mes: number; ultimo_periodo_anio: number; ultimo_periodo_mes: number; aranceles_json: Array<{ valor: string; ocurrencias: number }>; rubros_json: Array<{ valor: string; ocurrencias: number }> }
 
 const emptyCode = { grupo: 'ADUANA', codigo: '', glosa: '', vigente: true, origen: 'MANUAL', pendiente_revision: false, observacion: '' }
 const emptyPartida = { codigo: '', glosa: '', vigente: true, origen: 'MANUAL', observacion: '' }
@@ -28,8 +29,8 @@ function csrfToken() {
 
 export default function CatalogosPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
-  const [section, setSection] = useState<'codigos' | 'partidas'>('codigos')
-  const [rows, setRows] = useState<Array<CatalogoCodigo | Partida>>([])
+  const [section, setSection] = useState<'codigos' | 'partidas' | 'perfiles'>('codigos')
+  const [rows, setRows] = useState<Array<CatalogoCodigo | Partida | PerfilImportador>>([])
   const [totalRows, setTotalRows] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -43,7 +44,8 @@ export default function CatalogosPage() {
   async function loadCatalogs(nextPage = page, nextSearch = search) {
     setLoading(true)
     try {
-      const response = await fetch(`${apiBaseUrl}/api/catalogos/${section}/?page=${nextPage}&page_size=25&search=${encodeURIComponent(nextSearch)}&grupo=${encodeURIComponent(group)}`, { cache: 'no-store' })
+      const endpoint = section === 'perfiles' ? `${apiBaseUrl}/api/reportes/perfiles-importadores/?page=${nextPage}&search=${encodeURIComponent(nextSearch)}` : `${apiBaseUrl}/api/catalogos/${section}/?page=${nextPage}&page_size=25&search=${encodeURIComponent(nextSearch)}&grupo=${encodeURIComponent(group)}`
+      const response = await fetch(endpoint, { cache: 'no-store', credentials: 'include' })
       const data = response.ok ? await response.json() : { count: 0, results: [] }
       setRows(Array.isArray(data.results) ? data.results : [])
       setTotalRows(Number(data.count ?? 0))
@@ -97,7 +99,7 @@ export default function CatalogosPage() {
 
   const totalPages = Math.max(1, Math.ceil(totalRows / 25))
 
-  function changeSection(nextSection: 'codigos' | 'partidas') {
+  function changeSection(nextSection: 'codigos' | 'partidas' | 'perfiles') {
     setSection(nextSection)
     setPage(1)
     setSearch('')
@@ -112,7 +114,7 @@ export default function CatalogosPage() {
   }
 
   return (
-    <main className="page catalog-page">
+    <main className={`page catalog-page catalog-${section}`}>
       <TopNav />
       <section className="catalog-heading">
         <div>
@@ -121,13 +123,14 @@ export default function CatalogosPage() {
           <p className="lead">Mantén códigos, glosas y partidas disponibles antes de procesar importaciones.</p>
         </div>
         <div className="catalog-tabs">
-          <button className={section === 'codigos' ? 'is-active' : ''} onClick={() => changeSection('codigos')}>Códigos generales</button>
-          <button className={section === 'partidas' ? 'is-active' : ''} onClick={() => changeSection('partidas')}>Partidas arancelarias</button>
+           <button className={section === 'codigos' ? 'is-active' : ''} onClick={() => changeSection('codigos')}>Códigos generales</button>
+           <button className={section === 'partidas' ? 'is-active' : ''} onClick={() => changeSection('partidas')}>Partidas arancelarias</button>
+           <button className={section === 'perfiles' ? 'is-active' : ''} onClick={() => changeSection('perfiles')}>Perfiles importadores</button>
         </div>
       </section>
 
       <section className="catalog-layout">
-        <form className="panel catalog-form" onSubmit={save}>
+        {section !== 'perfiles' ? <form className="panel catalog-form" onSubmit={save}>
           <div className="upload-header"><h2>{editingId ? 'Editar registro' : 'Nuevo registro'}</h2><button className="link-button" type="button" onClick={resetForm}>Limpiar</button></div>
           {section === 'codigos' ? <>
             <label>Grupo<select value={codeForm.grupo} onChange={(event) => setCodeForm({ ...codeForm, grupo: event.target.value })} disabled={Boolean(editingId)} required>{catalogGroups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{editingId ? <small>El grupo no se puede modificar después de crear el código.</small> : null}</label>
@@ -145,15 +148,12 @@ export default function CatalogosPage() {
           </>}
           <button className="catalog-save" type="submit">{editingId ? 'Guardar cambios' : 'Crear registro'}</button>
           {message ? <p className="login-message">{message}</p> : null}
-        </form>
+        </form> : null}
 
         <section className="panel catalog-table-panel">
-          <div className="catalog-list-header"><div><p className="eyebrow">Registros</p><h2>{loading ? 'Cargando...' : `${totalRows.toLocaleString('es-CL')} disponibles`}</h2></div><button className="link-button" onClick={() => loadCatalogs()}>Actualizar</button></div>
-          <form className="catalog-search" onSubmit={searchCatalogs}>{section === 'codigos' ? <select value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Todos los catálogos</option>{catalogGroups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : null}<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={section === 'partidas' ? 'Código desde el inicio o texto de glosa' : 'Buscar por código o glosa'} /><button type="submit">Buscar</button></form>
-          <div className="table-wrap"><table className="uploads-table"><thead><tr>{section === 'codigos' ? <th>Grupo</th> : null}<th>Código</th><th>Glosa</th><th>Estado</th><th /></tr></thead><tbody>
-            {rows.map((row) => <tr key={row.id}><td>{section === 'codigos' ? (row as CatalogoCodigo).grupo : null}</td><td>{row.codigo}</td><td>{row.glosa || '-'}</td><td>{row.vigente ? 'Vigente' : 'Inactivo'}</td><td className="catalog-actions"><button onClick={() => { setEditingId(row.id); if (section === 'codigos') setCodeForm(row as CatalogoCodigo); else setPartidaForm(row as Partida) }}>Editar</button><button onClick={() => remove(row.id)}>Eliminar</button></td></tr>)}
-            {!loading && rows.length === 0 ? <tr><td colSpan={section === 'codigos' ? 5 : 4}>No se encontraron registros.</td></tr> : null}
-          </tbody></table></div>
+          <div className="catalog-list-header"><div><p className="eyebrow">{section === 'perfiles' ? 'Base histórica' : 'Registros'}</p><h2>{loading ? 'Cargando...' : `${totalRows.toLocaleString('es-CL')} disponibles`}</h2></div><button className="link-button" onClick={() => loadCatalogs()}>Actualizar</button></div>
+          <form className="catalog-search" onSubmit={searchCatalogs}>{section === 'codigos' ? <select value={group} onChange={(event) => setGroup(event.target.value)}><option value="">Todos los catálogos</option>{catalogGroups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : null}<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={section === 'perfiles' ? 'Buscar por RUT, DV o nombre' : section === 'partidas' ? 'Código desde el inicio o texto de glosa' : 'Buscar por código o glosa'} /><button type="submit">Buscar</button></form>
+          {section === 'perfiles' ? <div className="table-wrap"><table className="uploads-table"><thead><tr><th>RUT</th><th>Importador</th><th>Evidencias</th><th>Último período</th><th>Aranceles frecuentes</th></tr></thead><tbody>{(rows as PerfilImportador[]).map((profile) => <tr key={profile.id}><td>{profile.rut}-{profile.dv}</td><td><strong>{profile.nombre}</strong><br /><small>{profile.rubros_json.slice(0, 2).map((rubro) => rubro.valor).join(' · ')}</small></td><td>{profile.total_evidencias}</td><td>{profile.ultimo_periodo_mes}/{profile.ultimo_periodo_anio}</td><td>{profile.aranceles_json.slice(0, 3).map((arancel) => arancel.valor).join(', ') || '-'}</td></tr>)}{!loading && rows.length === 0 ? <tr><td colSpan={5}>No se encontraron perfiles.</td></tr> : null}</tbody></table></div> : <div className="table-wrap"><table className="uploads-table"><thead><tr>{section === 'codigos' ? <th>Grupo</th> : null}<th>Código</th><th>Glosa</th><th>Estado</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{section === 'codigos' ? (row as CatalogoCodigo).grupo : null}</td><td>{(row as CatalogoCodigo).codigo}</td><td>{(row as CatalogoCodigo).glosa || '-'}</td><td>{(row as CatalogoCodigo).vigente ? 'Vigente' : 'Inactivo'}</td><td className="catalog-actions"><button onClick={() => { setEditingId(row.id); if (section === 'codigos') setCodeForm(row as CatalogoCodigo); else setPartidaForm(row as Partida) }}>Editar</button><button onClick={() => remove(row.id)}>Eliminar</button></td></tr>)}{!loading && rows.length === 0 ? <tr><td colSpan={section === 'codigos' ? 5 : 4}>No se encontraron registros.</td></tr> : null}</tbody></table></div>}
           <footer className="catalog-pagination"><span>Página {page} de {totalPages}</span><div><button disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</button><button disabled={page === totalPages} onClick={() => setPage(page + 1)}>Siguiente</button></div></footer>
         </section>
       </section>
