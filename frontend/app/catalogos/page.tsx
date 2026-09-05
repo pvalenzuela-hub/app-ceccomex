@@ -135,8 +135,7 @@ export default function CatalogosPage() {
             <label>Glosa<textarea rows={3} value={codeForm.glosa} onChange={(event) => setCodeForm({ ...codeForm, glosa: event.target.value })} /></label>
             <label>Origen<input value={codeForm.origen} onChange={(event) => setCodeForm({ ...codeForm, origen: event.target.value.toUpperCase() })} required /></label>
             <label>Observación<textarea rows={2} value={codeForm.observacion} onChange={(event) => setCodeForm({ ...codeForm, observacion: event.target.value })} /></label>
-            <label className="check-label"><input type="checkbox" checked={codeForm.vigente} onChange={(event) => setCodeForm({ ...codeForm, vigente: event.target.checked })} />Vigente</label>
-            <label className="check-label"><input type="checkbox" checked={codeForm.pendiente_revision} onChange={(event) => setCodeForm({ ...codeForm, pendiente_revision: event.target.checked })} />Pendiente de revisión</label>
+            <fieldset className="status-choice"><legend>Estado</legend><label><input type="radio" name="codigo-estado" checked={codeForm.vigente} onChange={() => setCodeForm({ ...codeForm, vigente: true, pendiente_revision: false })} /> Vigente</label><label><input type="radio" name="codigo-estado" checked={codeForm.pendiente_revision} onChange={() => setCodeForm({ ...codeForm, vigente: false, pendiente_revision: true })} /> Pendiente de revisión</label></fieldset>
           </> : <>
             <label>Código arancelario<input value={partidaForm.codigo} onChange={(event) => setPartidaForm({ ...partidaForm, codigo: event.target.value })} required /></label>
             <label>Glosa<textarea rows={3} value={partidaForm.glosa} onChange={(event) => setPartidaForm({ ...partidaForm, glosa: event.target.value })} required /></label>

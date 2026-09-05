@@ -622,6 +622,9 @@ html, body {
 .login-help { margin: 42px 0 0; color: #8a99aa; font-size: 12px; text-align: center; }
 .login-credit { margin: 14px 0 0; color: #9ba8b7; font-size: 11px; text-align: center; }
 .login-credit a { color: #4c7fab; font-weight: 700; text-decoration: none; }
+.status-choice { display: flex; gap: 18px; margin: 0; padding: 10px 0; border: 0; }
+.status-choice legend { padding: 0; color: var(--muted); font-size: 14px; }
+.status-choice label { display: flex; align-items: center; gap: 4px; color: var(--text); font-size: 14px; }
 
 .eyebrow {
   text-transform: uppercase;
