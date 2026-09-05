@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from openpyxl import load_workbook
 
@@ -27,6 +28,7 @@ class Command(BaseCommand):
             if not path.exists():
                 raise CommandError(f"No existe: {path}")
             self.load_file(path)
+        call_command("rebuild_perfiles_importadores")
 
     def load_file(self, path):
         workbook = load_workbook(path, read_only=True, data_only=True)
