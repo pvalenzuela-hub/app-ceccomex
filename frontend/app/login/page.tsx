@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 
+function csrfToken() { return document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? '' }
+
 export default function LoginPage() {
   const [backendStatus, setBackendStatus] = useState('Verificando...')
   const [loginMessage, setLoginMessage] = useState('')
@@ -9,7 +11,7 @@ export default function LoginPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/health/`, { cache: 'no-store' })
+    fetch(`${apiBaseUrl}/api/health/`, { cache: 'no-store', credentials: 'include' })
       .then(async (res) => {
         const data = await res.json()
         setBackendStatus(data.status === 'ok' ? 'Backend conectado' : 'Backend no responde')
@@ -23,10 +25,11 @@ export default function LoginPage() {
     setLoginMessage('')
     const formData = new FormData(event.currentTarget)
     try {
+      await fetch(`${apiBaseUrl}/api/health/`, { cache: 'no-store', credentials: 'include' })
       const response = await fetch(`${apiBaseUrl}/api/core/login-check/`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
         body: JSON.stringify({
           username: String(formData.get('username') || ''),
           password: String(formData.get('password') || ''),
