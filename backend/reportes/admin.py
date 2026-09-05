@@ -1,11 +1,17 @@
 from django.contrib import admin
 
-from reportes.models import ImportadorProbable, ReporteSectorial, ReporteSectorialDetalle
+from reportes.models import ImportadorProbable, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle
 
 
 @admin.register(ImportadorProbable)
 class ImportadorProbableAdmin(admin.ModelAdmin):
     list_display = ("nombre", "rut", "dv", "origen")
+    search_fields = ("nombre", "rut")
+
+
+@admin.register(PerfilImportador)
+class PerfilImportadorAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "rut", "dv", "total_evidencias", "ultimo_periodo_anio", "ultimo_periodo_mes")
     search_fields = ("nombre", "rut")
 
 
