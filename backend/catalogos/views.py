@@ -44,5 +44,5 @@ class PartidaArancelariaViewSet(ModelViewSet):
         queryset = PartidaArancelaria.objects.all().order_by("codigo")
         search = self.request.query_params.get("search", "").strip()
         if search:
-            queryset = queryset.filter(Q(codigo__icontains=search) | Q(glosa__icontains=search))
+            queryset = queryset.filter(Q(codigo__istartswith=search) | Q(glosa__icontains=search))
         return queryset
