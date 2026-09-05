@@ -625,8 +625,6 @@ html, body {
 .status-choice { display: flex; gap: 18px; margin: 0; padding: 10px 0; border: 0; }
 .status-choice legend { padding: 0; color: var(--muted); font-size: 14px; }
 .status-choice label { display: flex; align-items: center; gap: 4px; color: var(--text); font-size: 14px; }
-.app-footer { margin: 24px 24px 24px 248px; color: #8594a5; font-size: 12px; text-align: center; }
-.app-footer a { color: #4379ac; font-weight: 700; text-decoration: none; }
 .catalog-perfiles .catalog-layout { grid-template-columns: 1fr; }
 
 .eyebrow {
@@ -1058,7 +1056,6 @@ h1 {
   .report-rubros { display: grid; }
   .report-workspace { gap: 14px; }
   .report-filters-panel footer { align-items: flex-start; flex-direction: column; }
-  .app-footer { margin: 22px 18px; }
 
   .login-page { grid-template-columns: 1fr; }
   .login-brand-panel { min-height: 340px; padding: 28px 28px 32px; }

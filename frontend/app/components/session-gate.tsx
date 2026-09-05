@@ -32,5 +32,5 @@ export default function SessionGate({ children }: { children: ReactNode }) {
   }, [api, pathname])
 
   if (!ready) return <main className="page"><section className="panel dashboard-loading"><p className="eyebrow">CEC COMEX Platform</p><h1>Validando sesión</h1></section></main>
-  return <>{children}{pathname !== '/login' ? <footer className="app-footer">Desarrollado por <a href="https://datnexia.com" target="_blank" rel="noreferrer">Datnexia.com</a> para CEC S.A. · Santiago · Chile</footer> : null}</>
+  return <>{children}</>
 }
