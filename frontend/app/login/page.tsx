@@ -54,7 +54,7 @@ export default function LoginPage() {
       <section className="login-brand-panel">
         <div className="login-brand-header"><img src="https://cec.cl/wp-content/uploads/2024/10/logo-1024x658.png" alt="CEC Comercio Exterior y Consultoría" /><span>COMEX PLATFORM</span></div>
         <div className="login-brand-copy"><p>Inteligencia para comercio exterior</p><h1>Información clara para decisiones que cruzan fronteras.</h1><div className="login-brand-line" /><span>Importaciones · Exportaciones · Análisis de mercado</span></div>
-        <small>CEC S.A. · Santiago · Chile</small>
+        <small>Desarrollado por Datnexia.com para CEC S.A. · Santiago · Chile</small>
       </section>
 
       <section className="login-access-panel">
