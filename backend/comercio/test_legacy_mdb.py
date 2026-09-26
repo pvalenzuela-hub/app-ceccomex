@@ -3,11 +3,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase
 
 from comercio.legacy_mdb import LEGACY_COLUMNS, map_importacion
 from comercio.management.commands.import_legacy_mdb import Command, read_month
 from comercio.models import ArchivoCarga, Importacion
+from reportes.management.commands.sync_importadores_mdb_2015 import valid_rut
+from reportes.models import ImportadorProbable
 from reportes.views import _column_value, _filtered_importaciones
 
 
@@ -27,6 +30,12 @@ def example_row(**overrides):
 
 
 class LegacyMDBMappingTests(SimpleTestCase):
+    def test_rut_verification_for_catalog(self):
+        self.assertTrue(valid_rut("12345678", "5"))
+        self.assertTrue(valid_rut("10000001", "6"))
+        self.assertFalse(valid_rut("12345678", "6"))
+        self.assertFalse(valid_rut("0", "0"))
+
     def test_preserves_named_fields_and_uses_item_values_instead_of_header_totals(self):
         data = map_importacion(example_row(), 1)
         self.assertEqual(data["fecha_text"], "2015-01-02")
@@ -119,3 +128,43 @@ class LegacyMDBLoadTests(TestCase):
         )
         results = _filtered_importaciones({"regimenes": ["1"]}, None, None)
         self.assertCountEqual(results.values_list("numero_ident", flat=True), ["txt", "mdb"])
+
+    def test_catalog_backfill_is_conservative_idempotent_and_links_existing_rows(self):
+        source = ArchivoCarga.objects.create(nombre_archivo="mdb", archivo="cargas/example.zip", tipo_archivo="IMP")
+        original = ImportadorProbable.objects.create(rut="10.000.001", dv="6", nombre="NOMBRE CATALOGO")
+
+        def row(rut, dv, name):
+            return Importacion.objects.create(
+                archivo_origen=source, periodo_anio=2015, periodo_mes=1,
+                payload_json={"source_format": "MDB_JET3_2015", "legacy_fields": {"RUT": rut, "DV": dv, "IMPORT": name}},
+            )
+
+        new_a = row("12345678", "5", "NUEVO IMPORTADOR")
+        new_b = row("12.345.678", "5", "nuevo importador")
+        matched = row("10000001", "6", "OTRO NOMBRE EN MDB")
+        conflicting_a = row("11111111", "1", "PRIMER NOMBRE")
+        conflicting_b = row("11111111", "1", "SEGUNDO NOMBRE")
+        no_dv = row("87654321", "", "SIN DV")
+        invalid = row("87654321", "1", "RUT INVALIDO")
+
+        call_command("sync_importadores_mdb_2015", "--dry-run", verbosity=0)
+        self.assertEqual(ImportadorProbable.objects.count(), 1)
+        self.assertFalse(Importacion.objects.exclude(importador_probable_sugerido=None).exists())
+
+        call_command("sync_importadores_mdb_2015", verbosity=0)
+        self.assertEqual(ImportadorProbable.objects.count(), 2)
+        created = ImportadorProbable.objects.get(origen="MDB_2015")
+        self.assertEqual((created.rut, created.dv, created.nombre), ("12345678", "5", "NUEVO IMPORTADOR"))
+        self.assertEqual(ImportadorProbable.objects.get(pk=original.pk).nombre, "NOMBRE CATALOGO")
+        for item in (new_a, new_b):
+            item.refresh_from_db()
+            self.assertEqual(item.importador_probable_sugerido_id, created.pk)
+        matched.refresh_from_db()
+        self.assertEqual(matched.importador_probable_sugerido_id, original.pk)
+        for item in (conflicting_a, conflicting_b, no_dv, invalid):
+            item.refresh_from_db()
+            self.assertIsNone(item.importador_probable_sugerido_id)
+
+        call_command("sync_importadores_mdb_2015", verbosity=0)
+        self.assertEqual(ImportadorProbable.objects.count(), 2)
+        self.assertEqual(Importacion.objects.exclude(importador_probable_sugerido=None).count(), 3)
