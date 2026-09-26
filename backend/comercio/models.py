@@ -66,6 +66,12 @@ class Importacion(models.Model):
     payload_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["periodo_anio", "periodo_mes", "-creado"], name="imp_periodo_creado_idx"),
+            models.Index(fields=["-creado"], name="imp_creado_idx"),
+        ]
+
 
 class Exportacion(models.Model):
     archivo_origen = models.ForeignKey(ArchivoCarga, on_delete=models.CASCADE, related_name="exportaciones")

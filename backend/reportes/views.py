@@ -7,6 +7,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
+from comercio.legacy_mdb import LEGACY_COLUMNS
 from comercio.models import Importacion
 from reportes.models import ImportadorProbable, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
 from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialDetalleSerializer, ReporteSectorialSerializer, RubroImportacionSerializer
@@ -71,8 +72,27 @@ DIN_LABELS = (
 )
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
+IMPORT_COLUMNS.extend((f"mdb:{name}", f"MDB 2015 - {name}") for name in LEGACY_COLUMNS)
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DEFAULT_COLUMNS = ["numero_ident", "importador_probable", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
+
+# Only map fields whose historical meaning matches the DIN TXT column.
+LEGACY_DIN_NAMES = {
+    "TIPO_DOCTO": "TIP_OPER", "ADU": "COD_ADU", "PA_ORIG": "PAI_ORI",
+    "PA_ADQ": "PAI_ADQ", "VIA_TRAN": "VIA", "PTO_EMB": "PTO_EMB",
+    "PTO_DESEM": "PTO_DES", "TPO_CARGA": "TIP_CAR", "REG_IMP": "REG_IMP",
+    "MONEDA": "COD_MON", "CL_COMPRA": "COD_CLCOM", "FOB": "VAL_FOB",
+    "COD_FLE": "COD_FLETE", "FLETE": "VAL_FLETE", "TOT_BULTOS": "TOT_BUL",
+    "COD_SEG": "COD_SEG", "SEGURO": "MON_SEG", "TOT_PESO": "TOT_PESO",
+    "CIF": "CIF_TOTAL", "NUMITEM": "NUM_ITEM", "DNOMBRE": "MERCADERIA",
+    "CANT-MERC": "CANT_MERC", "MEDIDA": "COD_UMED", "PRE-UNIT": "PRE_UFOB",
+    "ARANC-NAC": "COD_AAR", "CIF-ITEM": "CIF_ITEM",
+}
+LEGACY_DIN_NAMES.update({f"TPO_BUL{i}": f"TIP_BUL{i}" for i in range(1, 9)})
+LEGACY_DIN_BY_INDEX = {
+    index: LEGACY_DIN_NAMES[name] for index, name in enumerate(DIN_LABELS)
+    if name in LEGACY_DIN_NAMES
+}
 
 
 def _selected_values(value):
@@ -94,15 +114,25 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
         qs = qs.filter(partida_arancelaria_codigo__in=tarifas)
     regimenes = _selected_values(filters.get("regimenes", []))
     if regimenes:
-            qs = qs.filter(payload_json__raw_columns__54__in=regimenes)
+        qs = qs.filter(
+            Q(payload_json__raw_columns__54__in=regimenes)
+            | Q(payload_json__legacy_fields__REG_IMP__in=regimenes)
+        )
     return qs
 
 
 def _column_value(row, key, catalogos):
+    legacy = row.payload_json.get("legacy_fields", {})
     if key == "importador_probable":
-        return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else ""
+        return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else legacy.get("IMPORT", "")
+    if key.startswith("mdb:"):
+        return legacy.get(key.split(":", 1)[1], "")
     raw = row.payload_json.get("raw_columns", [])
-    raw_value = lambda index: raw[index] if index < len(raw) else ""
+    def raw_value(index):
+        if legacy:
+            return legacy.get(LEGACY_DIN_BY_INDEX.get(index), "")
+        return raw[index] if index < len(raw) else ""
+
     glosa_fields = {
         "aduana_glosa": ("aduanas", row.aduana_codigo),
         "comuna_importador_glosa": ("comunas", row.comuna_importador_codigo),
@@ -128,7 +158,7 @@ def _column_value(row, key, catalogos):
         "form_pago_glosa": ("formas_pago", raw_value(57)),
         "moneda_glosa": ("monedas", raw_value(60)),
         "cl_compra_glosa": ("clausulas_compra_venta", raw_value(62)),
-        "medida_glosa": ("unidades_medida", raw_value(144)),
+        "medida_glosa": ("unidades_medida", raw_value(DIN_LABELS.index("MEDIDA"))),
         **{f"tpo_bul{number}_glosa": ("tipos_bulto", raw_value(77 + (number - 1) * 2)) for number in range(1, 9)},
     }
     if key in glosa_fields:
