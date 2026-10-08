@@ -90,6 +90,9 @@ class Command(BaseCommand):
             if len(values) < 2:
                 continue
             codigo = str(values[0]).strip()[:32]
+            # Excel stores tariff codes as numbers; DIN/DUS use 8 digits with leading zeros.
+            if isinstance(values[0], int) or codigo.isdigit():
+                codigo = codigo.zfill(8)
             glosa = str(values[1]).strip() if len(values) > 1 else ""
             if not codigo or codigo.lower() == "codigo" or glosa.lower() == "glosa":
                 continue
