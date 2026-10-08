@@ -8,7 +8,8 @@ from kombu.exceptions import OperationalError
 
 from comercio.models import ArchivoCarga, ArchivoCargaStaging
 from comercio.processing import materialize_final_rows, store_staging_rows
-from comercio.tasks import process_uploaded_archive
+from comercio.tasks import process_export_archive, process_uploaded_archive
+from comercio.dus_txt import TIPOS as EXPORT_TIPOS
 from comercio.serializers import (
     ArchivoCargaListSerializer,
     ArchivoCargaSerializer,
@@ -31,6 +32,18 @@ def upload_archivo(request):
         archivo_carga.observacion = (archivo_carga.observacion + " | ").strip(" |") + "El archivo no es un ZIP válido."
         archivo_carga.save(update_fields=["estado", "observacion"])
         return Response({"detail": "El archivo no es un ZIP válido."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if archivo_carga.tipo_archivo in EXPORT_TIPOS:
+        archivo_carga.observacion = "Procesamiento de exportaciones en segundo plano"
+        archivo_carga.save(update_fields=["observacion"])
+        try:
+            process_export_archive.delay(archivo_carga.id)
+        except OperationalError:
+            process_export_archive(archivo_carga.id)
+            archivo_carga.refresh_from_db()
+            response_status = status.HTTP_201_CREATED if archivo_carga.estado == "PROCESADO" else status.HTTP_400_BAD_REQUEST
+            return Response(ArchivoCargaSerializer(archivo_carga).data, status=response_status)
+        return Response(ArchivoCargaSerializer(archivo_carga).data, status=status.HTTP_202_ACCEPTED)
 
     with zipfile.ZipFile(archivo_carga.archivo.path) as zf:
         txt_files = [name for name in zf.namelist() if name.lower().endswith(".txt")]

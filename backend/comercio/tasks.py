@@ -44,3 +44,25 @@ def process_uploaded_archive_by_id(archivo_carga_id: int) -> None:
     archivo_carga.estado = "PROCESADO"
     archivo_carga.observacion = (archivo_carga.observacion + " | ").strip(" |") + "Materialización finalizada"
     archivo_carga.save(update_fields=["estado", "total_registros", "total_procesados", "total_ok", "observacion"])
+
+
+@shared_task
+def process_export_archive(archivo_carga_id: int) -> None:
+    """Load the DUS TXT matching the upload's tipo_archivo through the streaming export loader."""
+    from zipfile import BadZipFile, ZipFile
+
+    from comercio.export_loader import export_members, load_member
+
+    try:
+        archivo_carga = ArchivoCarga.objects.get(id=archivo_carga_id)
+    except ObjectDoesNotExist:
+        return
+    try:
+        with ZipFile(archivo_carga.archivo.path) as archive:
+            members = export_members(archive, archivo_carga.tipo_archivo)
+            if not members:
+                raise ValueError(f"El ZIP no contiene un TXT de {archivo_carga.get_tipo_archivo_display()}")
+            member, tipo = members[0]
+            load_member(archive, member, tipo, archivo_path=archivo_carga.archivo.name, source=archivo_carga)
+    except (OSError, ValueError, BadZipFile) as exc:
+        ArchivoCarga.objects.filter(id=archivo_carga_id).update(estado="ERROR", observacion=str(exc)[:2000])

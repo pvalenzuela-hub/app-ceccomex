@@ -1,4 +1,4 @@
-from comercio.models import ArchivoCarga, ArchivoCargaStaging, Exportacion, ExportacionBulto, ExportacionDocTransporte, Importacion
+from comercio.models import ArchivoCarga, ArchivoCargaStaging, Importacion
 
 
 def split_semicolon_line(line: str) -> list[str]:
@@ -49,46 +49,6 @@ def parse_txt_line(tipo_archivo: str, line: str) -> dict:
             "valor_flete": valor_flete,
             "valor_seguro": valor_seguro,
             "valor_cif": valor_cif,
-            "raw_columns": parts,
-        }
-
-    if tipo_archivo == "EXP_BASE":
-        partida_idx = 136 if len(parts) > 136 else None
-        glosa_idx = 137 if len(parts) > 137 else None
-        valor_fob_idx = 145 if len(parts) > 145 else None
-        return {
-            "numero_ident": parts[0] if len(parts) > 0 else "",
-            "item": parts[1] if len(parts) > 1 else "",
-            "fecha": parts[4] if len(parts) > 4 else "",
-            "aduana_codigo": parts[5] if len(parts) > 5 else "",
-            "pais_destino_codigo": parts[54] if len(parts) > 54 else "",
-            "partida_arancelaria_codigo": parts[partida_idx] if partida_idx is not None else "",
-            "glosa_mercancia": parts[glosa_idx] if glosa_idx is not None else "",
-            "via_transporte_codigo": parts[57] if len(parts) > 57 else "",
-            "valor_fob": parts[valor_fob_idx] if valor_fob_idx is not None else "",
-            "raw_columns": parts,
-        }
-
-    if tipo_archivo == "EXP_BULTO":
-        return {
-            "numero_ident": parts[0] if len(parts) > 0 else "",
-            "secuencia": parts[1] if len(parts) > 1 else "",
-            "tipo_bulto_codigo": parts[2] if len(parts) > 2 else "",
-            "cantidad_bultos": parts[3] if len(parts) > 3 else "",
-            "marcas": parts[4] if len(parts) > 4 else "",
-            "raw_columns": parts,
-        }
-
-    if tipo_archivo == "EXP_DOC":
-        return {
-            "numero_ident": parts[0] if len(parts) > 0 else "",
-            "secuencia": parts[1] if len(parts) > 1 else "",
-            "numero_documento": parts[2] if len(parts) > 2 else "",
-            "fecha_documento_text": parts[3] if len(parts) > 3 else "",
-            "nave": parts[4] if len(parts) > 4 else "",
-            "numero_viaje": parts[5] if len(parts) > 5 else "",
-            "puerto_embarque_codigo": parts[6] if len(parts) > 6 else "",
-            "via_transporte_codigo": parts[7] if len(parts) > 7 else "",
             "raw_columns": parts,
         }
 
@@ -188,9 +148,3 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
                 total_procesados=processed,
                 observacion=(archivo_carga.observacion + " | ").strip(" |") + f"Materializando importaciones: {processed}/{staging_rows.count()}",
             )
-    elif archivo_carga.tipo_archivo == "EXP_BASE":
-        Exportacion.objects.filter(archivo_origen=archivo_carga).delete()
-    elif archivo_carga.tipo_archivo == "EXP_BULTO":
-        ExportacionBulto.objects.filter(archivo_origen=archivo_carga).delete()
-    elif archivo_carga.tipo_archivo == "EXP_DOC":
-        ExportacionDocTransporte.objects.filter(archivo_origen=archivo_carga).delete()

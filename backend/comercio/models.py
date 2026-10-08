@@ -74,6 +74,8 @@ class Importacion(models.Model):
 
 
 class Exportacion(models.Model):
+    """One DUS item. *_dus amounts are declaration totals repeated on every item: never sum them per item."""
+
     archivo_origen = models.ForeignKey(ArchivoCarga, on_delete=models.CASCADE, related_name="exportaciones")
     periodo_anio = models.PositiveSmallIntegerField(null=True, blank=True)
     periodo_mes = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -82,13 +84,36 @@ class Exportacion(models.Model):
     fecha_text = models.CharField(max_length=32, blank=True)
     fecha_date = models.DateField(null=True, blank=True)
     aduana_codigo = models.CharField(max_length=32, blank=True)
+    tipo_operacion_codigo = models.CharField(max_length=32, blank=True)
+    exportador_codigo = models.CharField(max_length=32, blank=True)
+    comuna_exportador_codigo = models.CharField(max_length=32, blank=True)
+    region_origen_codigo = models.CharField(max_length=32, blank=True)
+    puerto_embarque_codigo = models.CharField(max_length=32, blank=True)
+    puerto_desembarque_codigo = models.CharField(max_length=32, blank=True)
     pais_destino_codigo = models.CharField(max_length=32, blank=True)
     via_transporte_codigo = models.CharField(max_length=32, blank=True)
     partida_arancelaria_codigo = models.CharField(max_length=32, blank=True)
     glosa_mercancia = models.TextField(blank=True)
+    unidad_medida_codigo = models.CharField(max_length=32, blank=True)
+    cantidad_mercancia = models.CharField(max_length=32, blank=True)
+    valor_fob_unitario = models.CharField(max_length=32, blank=True)
     valor_fob = models.CharField(max_length=32, blank=True)
+    peso_bruto_item = models.CharField(max_length=32, blank=True)
+    valor_fob_dus = models.CharField(max_length=32, blank=True)
+    valor_flete_dus = models.CharField(max_length=32, blank=True)
+    valor_seguro_dus = models.CharField(max_length=32, blank=True)
+    valor_cif_dus = models.CharField(max_length=32, blank=True)
+    valor_liquido_retorno_dus = models.CharField(max_length=32, blank=True)
+    registro_incompleto = models.BooleanField(default=False)
     payload_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["periodo_anio", "periodo_mes"], name="exp_periodo_idx"),
+            models.Index(fields=["numero_ident"], name="exp_numero_ident_idx"),
+            models.Index(fields=["partida_arancelaria_codigo"], name="exp_partida_idx"),
+        ]
 
 
 class ExportacionBulto(models.Model):
@@ -96,6 +121,8 @@ class ExportacionBulto(models.Model):
     periodo_anio = models.PositiveSmallIntegerField(null=True, blank=True)
     periodo_mes = models.PositiveSmallIntegerField(null=True, blank=True)
     numero_ident = models.CharField(max_length=64, blank=True)
+    fecha_text = models.CharField(max_length=32, blank=True)
+    fecha_date = models.DateField(null=True, blank=True)
     secuencia = models.CharField(max_length=32, blank=True)
     tipo_bulto_codigo = models.CharField(max_length=32, blank=True)
     cantidad_bultos = models.CharField(max_length=32, blank=True)
@@ -103,18 +130,34 @@ class ExportacionBulto(models.Model):
     payload_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["periodo_anio", "periodo_mes"], name="exp_bulto_periodo_idx"),
+            models.Index(fields=["numero_ident"], name="exp_bulto_numero_ident_idx"),
+        ]
+
 
 class ExportacionDocTransporte(models.Model):
     archivo_origen = models.ForeignKey(ArchivoCarga, on_delete=models.CASCADE, related_name="documentos_transporte")
     periodo_anio = models.PositiveSmallIntegerField(null=True, blank=True)
     periodo_mes = models.PositiveSmallIntegerField(null=True, blank=True)
     numero_ident = models.CharField(max_length=64, blank=True)
+    fecha_text = models.CharField(max_length=32, blank=True)
+    fecha_date = models.DateField(null=True, blank=True)
     secuencia = models.CharField(max_length=32, blank=True)
     numero_documento = models.CharField(max_length=64, blank=True)
     fecha_documento_text = models.CharField(max_length=32, blank=True)
     nave = models.CharField(max_length=255, blank=True)
     numero_viaje = models.CharField(max_length=64, blank=True)
+    # Not part of the DUS document file; puerto/vía live in Exportacion.
     puerto_embarque_codigo = models.CharField(max_length=32, blank=True)
     via_transporte_codigo = models.CharField(max_length=32, blank=True)
+    registro_incompleto = models.BooleanField(default=False)
     payload_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["periodo_anio", "periodo_mes"], name="exp_doc_periodo_idx"),
+            models.Index(fields=["numero_ident"], name="exp_doc_numero_ident_idx"),
+        ]
