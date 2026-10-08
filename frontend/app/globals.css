@@ -1071,3 +1071,19 @@ h1 {
 .modal.dus-detail { width: min(1040px, 100%); max-height: 88vh; overflow: auto; }
 .modal.dus-detail > .table-wrap { display: block; }
 .modal.dus-detail h3 { margin: 4px 0 0; color: #102a47; font-size: 15px; }
+
+.report-filters-panel .report-universe { grid-template-columns: 1fr; align-items: start; }
+.report-filters-panel .report-universe .tariff-search, .report-other-filters .tariff-search { margin: 0; }
+.searchable-select { display: grid; gap: 6px; min-width: 0; }
+.searchable-select .selected-values { padding: 0; }
+.searchable-select input:not([type="checkbox"]) { border: 1px solid #d4e0ed; border-radius: 8px; padding: 10px 12px; background: #fbfdff; font: inherit; font-weight: 400; }
+.searchable-select small { color: #718397; font-size: 12px; font-weight: 400; }
+.term-input { display: flex; gap: 6px; }
+.term-input input { flex: 1; min-width: 0; }
+.term-input button { border: 1px solid #c7d7f3; border-radius: 8px; padding: 0 12px; background: #edf4ff; color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; }
+.report-other-filters { margin: 10px 22px 0; color: #425a73; font-size: 13px; }
+.report-other-filters summary { cursor: pointer; font-weight: 700; }
+.report-other-filters .report-filters { grid-template-columns: 1fr; padding: 12px 0 0; }
+@media (max-width: 800px) {
+  .report-filters-panel .report-universe, .report-other-filters .report-filters { grid-template-columns: 1fr; }
+}

@@ -1,5 +1,6 @@
 from django.http import HttpResponse
-from django.db.models import Q
+from django.db.models import Func, Q, TextField
+from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.core.paginator import Paginator
 from openpyxl import Workbook
 from rest_framework import status
@@ -99,6 +100,21 @@ def _selected_values(value):
     return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
 
 
+# Product description fields: DIN TXT positions DNOMBRE..ATR-6 and their MDB 2015 equivalents.
+PRODUCT_RAW_INDEXES = range(DIN_LABELS.index("DNOMBRE"), DIN_LABELS.index("ATR-6") + 1)
+PRODUCT_LEGACY_FIELDS = ("MERCADERIA", "ATRI1", "ATRI2", "ATRI3", "ATRI4", "ATRI5", "ATRI6")
+
+
+def _product_text():
+    """Concatenate without separators: Aduana splits long descriptions mid-word across these fields."""
+    raw = KeyTransform("raw_columns", "payload_json")
+    legacy = KeyTransform("legacy_fields", "payload_json")
+    parts = [KeyTextTransform(str(index), raw) for index in PRODUCT_RAW_INDEXES]
+    parts += [KeyTextTransform(name, legacy) for name in PRODUCT_LEGACY_FIELDS]
+    # A single flat CONCAT (NULL-skipping in PostgreSQL and SQLite 3.44+); Django's Concat nests one pair per field.
+    return Func(*parts, function="CONCAT", output_field=TextField())
+
+
 def _filtered_importaciones(filters, periodo_anio, periodo_mes):
     qs = Importacion.objects.select_related("importador_probable_sugerido").order_by("-creado")
     if periodo_anio:
@@ -112,6 +128,21 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
     tarifas = _selected_values(filters.get("partidas", []))
     if tarifas:
         qs = qs.filter(partida_arancelaria_codigo__in=tarifas)
+    paises_adquisicion = _selected_values(filters.get("pais_adquisicion_codigo", []))
+    if paises_adquisicion:
+        qs = qs.filter(
+            Q(payload_json__raw_columns__22__in=paises_adquisicion)
+            | Q(payload_json__legacy_fields__PAI_ADQ__in=paises_adquisicion)
+        )
+    importadores = [int(value) for value in _selected_values(filters.get("importadores", [])) if value.isdigit()]
+    if importadores:
+        qs = qs.filter(importador_probable_sugerido_id__in=importadores)
+    productos = _selected_values(filters.get("productos", []))
+    if productos:
+        product_filter = Q()
+        for term in productos:
+            product_filter |= Q(texto_producto__icontains=term)
+        qs = qs.annotate(texto_producto=_product_text()).filter(product_filter)
     regimenes = _selected_values(filters.get("regimenes", []))
     if regimenes:
         qs = qs.filter(
@@ -183,11 +214,16 @@ def detalle_reporte(request, reporte_id: int):
 
 @api_view(["GET"])
 def importadores_probables(request):
-    query = request.query_params.get("q", "")
+    query = request.query_params.get("q", "").strip()
     rows = ImportadorProbable.objects.all()
+    ids = [int(value) for value in request.query_params.get("ids", "").split(",") if value.strip().isdigit()]
+    if ids:
+        # Lets saved report configurations show the names of their selected importers.
+        return Response(ImportadorProbableSerializer(rows.filter(id__in=ids), many=True).data)
     if query:
-        rows = rows.filter(nombre__icontains=query)
-    return Response(ImportadorProbableSerializer(rows[:100], many=True).data)
+        rut = query.replace(".", "").replace(" ", "").split("-")[0]
+        rows = rows.filter(Q(rut__startswith=rut) if rut.isdigit() else Q(nombre__icontains=query))
+    return Response(ImportadorProbableSerializer(rows[:50], many=True).data)
 
 
 @api_view(["GET"])

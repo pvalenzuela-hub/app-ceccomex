@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import SearchableMultiSelect, { Option } from '../components/searchable-multi-select'
 import TopNav from '../components/top-nav'
 
 type Column = { key: string; label: string; default: boolean }
@@ -12,11 +13,16 @@ function csrfToken() {
   return document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
 }
 
-const catalogFields = [
-  ['aduana_codigo', 'Aduana', 'ADUANAS'], ['comuna_importador_codigo', 'Comuna importador', 'COMUNAS'],
-  ['pais_origen_codigo', 'País de origen', 'PAISES'], ['via_transporte_codigo', 'Vía de transporte', 'VIAS_TRANSPORTE'],
+type Importador = { id: number; rut: string; dv: string; nombre: string }
+
+// Filters beyond the main universe; kept so existing rubros keep working.
+const otherCatalogFields = [
+  ['comuna_importador_codigo', 'Comuna importador', 'COMUNAS'], ['via_transporte_codigo', 'Vía de transporte', 'VIAS_TRANSPORTE'],
   ['regimenes', 'Régimen de importación', 'REGIMENES'],
 ] as const
+
+const toOptions = (items: Catalog[] = []): Option[] => items.map((item) => ({ value: item.codigo, label: item.glosa }))
+const importadorOption = (item: Importador): Option => ({ value: String(item.id), label: item.nombre, hint: item.rut ? `${item.rut}-${item.dv}` : 'Sin RUT' })
 
 export default function InformesImportacionesPage() {
   const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
@@ -36,6 +42,8 @@ export default function InformesImportacionesPage() {
   const [message, setMessage] = useState('')
   const [generating, setGenerating] = useState(false)
   const [columnSearch, setColumnSearch] = useState('')
+  const [productText, setProductText] = useState('')
+  const [importadorLabels, setImportadorLabels] = useState<Record<string, string>>({})
 
   async function loadRubros() {
     const response = await fetch(`${api}/api/reportes/importaciones/rubros/`)
@@ -57,9 +65,24 @@ export default function InformesImportacionesPage() {
 
   function setFilter(name: string, values: string[]) { setFilters({ ...filters, [name]: values }) }
   function toggleColumn(key: string) { setSelected(selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key]) }
+  const searchImportadores = useCallback(async (text: string) => {
+    const response = await fetch(`${api}/api/reportes/importadores/?q=${encodeURIComponent(text)}`)
+    return response.ok ? (await response.json() as Importador[]).map(importadorOption) : []
+  }, [api])
+
+  function addProduct() {
+    const term = productText.trim()
+    if (term && !(filters.productos ?? []).some((item) => item.toLowerCase() === term.toLowerCase())) setFilter('productos', [...(filters.productos ?? []), term])
+    setProductText('')
+  }
+
   function recover(rubro: Rubro) {
     setSelected(rubro.configuracion_json.columnas ?? [])
     setFilters(rubro.configuracion_json.filtros ?? {})
+    const ids = rubro.configuracion_json.filtros?.importadores ?? []
+    if (ids.length) void fetch(`${api}/api/reportes/importadores/?ids=${ids.join(',')}`).then(async (response) => {
+      if (response.ok) setImportadorLabels(Object.fromEntries((await response.json() as Importador[]).map((item) => [String(item.id), item.nombre])))
+    })
     setEditing(rubro)
     setMessage(`Rubro "${rubro.nombre}" recuperado.`)
   }
@@ -108,7 +131,15 @@ export default function InformesImportacionesPage() {
     {message ? <p className="login-message">{message}</p> : null}
     <section className="report-layout report-workspace">
       <section className="panel report-columns-panel"><header><div><span className="report-step">01</span><p className="eyebrow">Salida del archivo</p><h2>Columnas a exportar</h2></div><button type="button" className="link-button" onClick={() => setSelected([])}>Limpiar selección</button></header><div className="column-search"><input value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder="Buscar campo DIN, código o descripción" /><span>{visibleColumns.length} disponibles</span></div><div className="column-picker">{visibleColumns.map((column) => <label key={column.key} className={selected.includes(column.key) ? 'is-selected' : ''}><input type="checkbox" checked={selected.includes(column.key)} onChange={() => toggleColumn(column.key)} /><span>{column.label}</span></label>)}</div></section>
-      <section className="panel report-filters-panel"><header><div><span className="report-step">02</span><p className="eyebrow">Universo de datos</p><h2>Filtros y aranceles</h2></div><p>Opcionales</p></header><div className="report-filters">{catalogFields.map(([key, label, group]) => <label key={key}><span>{label}</span><select multiple value={filters[key] ?? []} onChange={(event) => setFilter(key, Array.from(event.target.selectedOptions, (option) => option.value))}>{(catalogs[group] ?? []).map((item) => <option key={item.codigo} value={item.codigo}>{item.codigo} - {item.glosa}</option>)}</select></label>)}</div><label className="tariff-search"><span>Arancel por código o glosa</span><input value={partidaText} onChange={(event) => void searchPartidas(event.target.value)} placeholder="Ej. 8528 o motocicletas" />{partidas.length ? <div className="tariff-options tariff-options-multi">{partidas.map((partida) => { const selectedPartida = (filters.partidas ?? []).includes(partida.codigo); return <button key={partida.codigo} type="button" onClick={() => setFilter('partidas', selectedPartida ? (filters.partidas ?? []).filter((item) => item !== partida.codigo) : [...(filters.partidas ?? []), partida.codigo])}><input type="checkbox" checked={selectedPartida} readOnly /><strong>{partida.codigo}</strong><span>{partida.glosa}</span></button> })}</div> : null}</label>{(filters.partidas ?? []).length ? <div className="selected-values">{(filters.partidas ?? []).map((codigo) => <button key={codigo} type="button" onClick={() => setFilter('partidas', (filters.partidas ?? []).filter((item) => item !== codigo))}>{codigo} ×</button>)}</div> : null}<footer><div><span className="report-step">03</span><strong>Generar archivo</strong><p>Selecciona el período en el siguiente paso.</p></div><button type="button" className="report-run" disabled={!selected.length || generating} onClick={() => setShowRunDialog(true)}>{generating ? 'Generando reporte...' : 'Generar Excel'}</button></footer></section>
+      <section className="panel report-filters-panel"><header><div><span className="report-step">02</span><p className="eyebrow">Universo de datos</p><h2>Filtros y aranceles</h2></div><p>Opcionales</p></header><div className="report-filters report-universe">
+        <div className="searchable-select product-terms"><label className="tariff-search"><span>Productos / Marca{(filters.productos ?? []).length ? ` (${(filters.productos ?? []).length})` : ''}</span><div className="term-input"><input value={productText} onChange={(event) => setProductText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addProduct() } }} placeholder="Ej. SAMSUNG o neumáticos — Enter para agregar" /><button type="button" onClick={addProduct}>Agregar</button></div><small>Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados.</small></label>{(filters.productos ?? []).length ? <div className="selected-values">{(filters.productos ?? []).map((term) => <button key={term} type="button" onClick={() => setFilter('productos', (filters.productos ?? []).filter((item) => item !== term))}>{term} ×</button>)}</div> : null}</div>
+        <SearchableMultiSelect label="Importador" placeholder="Nombre o RUT del importador propuesto" selected={filters.importadores ?? []} onChange={(values) => setFilter('importadores', values)} search={searchImportadores} selectedLabels={importadorLabels} />
+        <SearchableMultiSelect label="País de origen" placeholder="Buscar país por nombre o código" selected={filters.pais_origen_codigo ?? []} onChange={(values) => setFilter('pais_origen_codigo', values)} options={toOptions(catalogs.PAISES)} />
+        <SearchableMultiSelect label="País de adquisición" placeholder="Buscar país por nombre o código" selected={filters.pais_adquisicion_codigo ?? []} onChange={(values) => setFilter('pais_adquisicion_codigo', values)} options={toOptions(catalogs.PAISES)} />
+        <div className="searchable-select"><label className="tariff-search"><span>Arancel por código o glosa{(filters.partidas ?? []).length ? ` (${(filters.partidas ?? []).length})` : ''}</span><input value={partidaText} onChange={(event) => void searchPartidas(event.target.value)} placeholder="Ej. 8528 o motocicletas" />{partidas.length ? <div className="tariff-options tariff-options-multi">{partidas.map((partida) => { const selectedPartida = (filters.partidas ?? []).includes(partida.codigo); return <button key={partida.codigo} type="button" onClick={() => setFilter('partidas', selectedPartida ? (filters.partidas ?? []).filter((item) => item !== partida.codigo) : [...(filters.partidas ?? []), partida.codigo])}><input type="checkbox" checked={selectedPartida} readOnly /><strong>{partida.codigo}</strong><span>{partida.glosa}</span></button> })}</div> : null}</label>{(filters.partidas ?? []).length ? <div className="selected-values">{(filters.partidas ?? []).map((codigo) => <button key={codigo} type="button" onClick={() => setFilter('partidas', (filters.partidas ?? []).filter((item) => item !== codigo))}>{codigo} ×</button>)}</div> : null}</div>
+        <SearchableMultiSelect label="Aduana" placeholder="Buscar aduana por nombre o código" selected={filters.aduana_codigo ?? []} onChange={(values) => setFilter('aduana_codigo', values)} options={toOptions(catalogs.ADUANAS)} />
+      </div>
+      <details className="report-other-filters"><summary>Otros filtros (comuna, vía, régimen)</summary><div className="report-filters">{otherCatalogFields.map(([key, label, group]) => <SearchableMultiSelect key={key} label={label} placeholder="Buscar por nombre o código" selected={filters[key] ?? []} onChange={(values) => setFilter(key, values)} options={toOptions(catalogs[group])} />)}</div></details><footer><div><span className="report-step">03</span><strong>Generar archivo</strong><p>Selecciona el período en el siguiente paso.</p></div><button type="button" className="report-run" disabled={!selected.length || generating} onClick={() => setShowRunDialog(true)}>{generating ? 'Generando reporte...' : 'Generar Excel'}</button></footer></section>
     </section>
     {showRubroDialog ? <div className="modal-backdrop"><section className="modal"><h2>{editing ? 'Actualizar rubro' : 'Crear rubro'}</h2><label>Nombre<input value={rubroName} onChange={(event) => setRubroName(event.target.value)} autoFocus /></label><div><button type="button" onClick={saveRubro}>Guardar</button><button type="button" className="link-button" onClick={() => setShowRubroDialog(false)}>Cancelar</button></div></section></div> : null}
     {showRunDialog ? <div className="modal-backdrop"><section className="modal"><h2>Periodo del informe</h2>{generating ? <p className="login-message">Generando el reporte. Su solicitud está siendo procesada...</p> : null}<label>Mes<select disabled={generating} value={periodoMes} onChange={(event) => setPeriodoMes(event.target.value)}>{Array.from({ length: 12 }, (_, index) => <option key={index} value={index + 1}>{new Date(2026, index).toLocaleString('es-CL', { month: 'long' })}</option>)}</select></label><label>Año<input disabled={generating} type="number" value={periodoAnio} onChange={(event) => setPeriodoAnio(event.target.value)} /></label><div><button type="button" disabled={generating} onClick={() => void execute()}>{generating ? 'Generando reporte...' : 'Generar Excel'}</button><button type="button" className="link-button" disabled={generating} onClick={() => setShowRunDialog(false)}>Cancelar</button></div></section></div> : null}
