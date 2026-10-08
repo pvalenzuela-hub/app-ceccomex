@@ -1,3 +1,5 @@
+import unicodedata
+
 from django.db.models import Func, Q, TextField
 from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.core.paginator import Paginator
@@ -106,6 +108,10 @@ PRODUCT_RAW_INDEXES = range(DIN_LABELS.index("DNOMBRE"), DIN_LABELS.index("ATR-6
 PRODUCT_LEGACY_FIELDS = ("MERCADERIA", "ATRI1", "ATRI2", "ATRI3", "ATRI4", "ATRI5", "ATRI6")
 
 
+def _without_accents(text):
+    return "".join(char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char))
+
+
 def _product_text():
     """Concatenate without separators: Aduana splits long descriptions mid-word across these fields."""
     raw = KeyTransform("raw_columns", "payload_json")
@@ -160,7 +166,9 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
     if productos:
         product_filter = Q()
         for term in productos:
-            product_filter |= Q(texto_producto__icontains=term)
+            # Aduana descriptions are mostly unaccented ("NEUMATICOS"): also try the term without accents.
+            for variant in {term, _without_accents(term)}:
+                product_filter |= Q(texto_producto__icontains=variant)
         qs = qs.annotate(texto_producto=_product_text()).filter(product_filter)
     regimenes = _selected_values(filters.get("regimenes", []))
     if regimenes:

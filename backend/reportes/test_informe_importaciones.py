@@ -111,3 +111,10 @@ class InformeImportacionesRangoTests(TestCase):
             informe = self.post((2015, 1), (2026, 12)).json()
         self.assertEqual(informe["estado"], "ERROR")
         self.assertIn("Excel admite", informe["error"])
+
+
+class ProductoSinTildesTests(TestCase):
+    def test_accented_term_matches_unaccented_customs_text(self):
+        source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="IMP")
+        Importacion.objects.create(archivo_origen=source, periodo_anio=2015, periodo_mes=1, numero_ident="1", payload_json={"legacy_fields": {"MERCADERIA": "NEUMATICOS RADIALES"}})
+        self.assertEqual(_filtered_importaciones({"productos": ["neumáticos"]}, 2015, 1).count(), 1)
