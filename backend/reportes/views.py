@@ -1,16 +1,17 @@
-from django.http import HttpResponse
 from django.db.models import Func, Q, TextField
 from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.core.paginator import Paginator
-from openpyxl import Workbook
+from django.http import FileResponse
+from kombu.exceptions import OperationalError
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.legacy_mdb import LEGACY_COLUMNS
 from comercio.models import Importacion
-from reportes.models import ImportadorProbable, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
+from reportes.models import ImportadorProbable, InformeExcel, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
 from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialDetalleSerializer, ReporteSectorialSerializer, RubroImportacionSerializer
 
 
@@ -115,8 +116,26 @@ def _product_text():
     return Func(*parts, function="CONCAT", output_field=TextField())
 
 
-def _filtered_importaciones(filters, periodo_anio, periodo_mes):
+def parse_periodo(value):
+    """{"anio": 2015, "mes": 1} -> (2015, 1), or None when absent or invalid."""
+    try:
+        anio, mes = int(value["anio"]), int(value["mes"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (anio, mes) if 1900 <= anio <= 2100 and 1 <= mes <= 12 else None
+
+
+def _period_range_q(desde, hasta):
+    return (
+        (Q(periodo_anio__gt=desde[0]) | Q(periodo_anio=desde[0], periodo_mes__gte=desde[1]))
+        & (Q(periodo_anio__lt=hasta[0]) | Q(periodo_anio=hasta[0], periodo_mes__lte=hasta[1]))
+    )
+
+
+def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=None, hasta=None):
     qs = Importacion.objects.select_related("importador_probable_sugerido").order_by("-creado")
+    if desde and hasta:
+        qs = qs.filter(_period_range_q(desde, hasta))
     if periodo_anio:
         qs = qs.filter(periodo_anio=periodo_anio)
     if periodo_mes:
@@ -152,6 +171,27 @@ def _filtered_importaciones(filters, periodo_anio, periodo_mes):
     return qs
 
 
+# Description columns: key -> (catalog group, model field name or DIN position).
+GLOSA_COLUMNS = {
+    "aduana_glosa": ("aduanas", "aduana_codigo"),
+    "comuna_importador_glosa": ("comunas", "comuna_importador_codigo"),
+    "pais_origen_glosa": ("paises", "pais_origen_codigo"),
+    "pa_orig_glosa": ("paises", 21), "pa_adq_glosa": ("paises", 22),
+    "via_transporte_glosa": ("via_transporte", 23), "pto_emb_glosa": ("puertos", 25),
+    "pto_desem_glosa": ("puertos", 26), "reg_imp_glosa": ("regimen_importacion", 54),
+    "tipo_docto_glosa": ("tipos_operacion_din", 1), "aductrol_glosa": ("aduanas", 10),
+    "adua_rs_glosa": ("aduanas", 18), "codpaiscon_glosa": ("paises", 7),
+    "codcomrs_glosa": ("comunas", 9), "tpo_carga_glosa": ("tipos_carga", 27),
+    "codvisbuen_glosa": ("vistos_buenos", 33), "codultvb_glosa": ("vistos_buenos", 36),
+    "pago_grav_glosa": ("formas_pago_gravamen", 37), "codpaiscia_glosa": ("paises", 41),
+    "bco_com_glosa": ("bancos_comerciales", 55), "codordiv_glosa": ("origen_divisas", 56),
+    "form_pago_glosa": ("formas_pago", 57), "moneda_glosa": ("monedas", 60),
+    "cl_compra_glosa": ("clausulas_compra_venta", 62),
+    "medida_glosa": ("unidades_medida", DIN_LABELS.index("MEDIDA")),
+    **{f"tpo_bul{number}_glosa": ("tipos_bulto", 77 + (number - 1) * 2) for number in range(1, 9)},
+}
+
+
 def _column_value(row, key, catalogos):
     legacy = row.payload_json.get("legacy_fields", {})
     if key == "importador_probable":
@@ -164,36 +204,9 @@ def _column_value(row, key, catalogos):
             return legacy.get(LEGACY_DIN_BY_INDEX.get(index), "")
         return raw[index] if index < len(raw) else ""
 
-    glosa_fields = {
-        "aduana_glosa": ("aduanas", row.aduana_codigo),
-        "comuna_importador_glosa": ("comunas", row.comuna_importador_codigo),
-        "pais_origen_glosa": ("paises", row.pais_origen_codigo),
-        "pa_orig_glosa": ("paises", raw_value(21)),
-        "pa_adq_glosa": ("paises", raw_value(22)),
-        "via_transporte_glosa": ("via_transporte", raw_value(23)),
-        "pto_emb_glosa": ("puertos", raw_value(25)),
-        "pto_desem_glosa": ("puertos", raw_value(26)),
-        "reg_imp_glosa": ("regimen_importacion", raw_value(54)),
-        "tipo_docto_glosa": ("tipos_operacion_din", raw_value(1)),
-        "aductrol_glosa": ("aduanas", raw_value(10)),
-        "adua_rs_glosa": ("aduanas", raw_value(18)),
-        "codpaiscon_glosa": ("paises", raw_value(7)),
-        "codcomrs_glosa": ("comunas", raw_value(9)),
-        "tpo_carga_glosa": ("tipos_carga", raw_value(27)),
-        "codvisbuen_glosa": ("vistos_buenos", raw_value(33)),
-        "codultvb_glosa": ("vistos_buenos", raw_value(36)),
-        "pago_grav_glosa": ("formas_pago_gravamen", raw_value(37)),
-        "codpaiscia_glosa": ("paises", raw_value(41)),
-        "bco_com_glosa": ("bancos_comerciales", raw_value(55)),
-        "codordiv_glosa": ("origen_divisas", raw_value(56)),
-        "form_pago_glosa": ("formas_pago", raw_value(57)),
-        "moneda_glosa": ("monedas", raw_value(60)),
-        "cl_compra_glosa": ("clausulas_compra_venta", raw_value(62)),
-        "medida_glosa": ("unidades_medida", raw_value(DIN_LABELS.index("MEDIDA"))),
-        **{f"tpo_bul{number}_glosa": ("tipos_bulto", raw_value(77 + (number - 1) * 2)) for number in range(1, 9)},
-    }
-    if key in glosa_fields:
-        grupo, codigo = glosa_fields[key]
+    if key in GLOSA_COLUMNS:
+        grupo, source = GLOSA_COLUMNS[key]
+        codigo = raw_value(source) if isinstance(source, int) else getattr(row, source)
         return catalogos.get(grupo, {}).get(str(codigo), "")
     if key.startswith("raw:"):
         index = int(key.split(":", 1)[1])
@@ -244,7 +257,12 @@ def importaciones_configuracion(request):
         key: list(CatalogoCodigo.objects.filter(grupo=grupo).values("codigo", "glosa").order_by("codigo"))
         for key, grupo in {"ADUANAS": "aduanas", "COMUNAS": "comunas", "PAISES": "paises", "VIAS_TRANSPORTE": "via_transporte", "REGIMENES": "regimen_importacion"}.items()
     }
-    return Response({"columnas": [{"key": key, "label": label, "default": key in DEFAULT_COLUMNS} for key, label in IMPORT_COLUMNS], "catalogos": grupos})
+    periodos = Importacion.objects.values_list("periodo_anio", "periodo_mes").distinct().order_by("-periodo_anio", "-periodo_mes")
+    return Response({
+        "columnas": [{"key": key, "label": label, "default": key in DEFAULT_COLUMNS} for key, label in IMPORT_COLUMNS],
+        "catalogos": grupos,
+        "periodos": [{"anio": anio, "mes": mes} for anio, mes in periodos if anio and mes],
+    })
 
 
 @api_view(["GET", "POST"])
@@ -278,22 +296,86 @@ def partidas_importacion(request):
     return Response(list(rows.order_by("codigo").values("codigo", "glosa")[:20]))
 
 
+IMPORT_CATALOG_GROUPS = (
+    "aduanas", "bancos_comerciales", "clausulas_compra_venta", "comunas", "formas_pago", "formas_pago_gravamen",
+    "monedas", "origen_divisas", "paises", "puertos", "regimen_importacion", "tipos_bulto", "tipos_carga",
+    "tipos_operacion_din", "unidades_medida", "via_transporte", "vistos_buenos",
+)
+
+
+def informe_importaciones_rows(parametros):
+    """(header, queryset, row function) for a stored report request; shared by the Celery task."""
+    columns = parametros["columnas"]
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    qs = _filtered_importaciones(parametros.get("filtros", {}), desde=desde, hasta=hasta)
+    catalogos = {grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa")) for grupo in IMPORT_CATALOG_GROUPS}
+    return [IMPORT_COLUMN_MAP[key] for key in columns], qs, lambda row: [_column_value(row, key, catalogos) for key in columns]
+
+
+def _informe_json(informe):
+    return {
+        "id": informe.id, "estado": informe.estado, "filas_total": informe.filas_total,
+        "filas_procesadas": informe.filas_procesadas, "error": informe.error, "nombre_descarga": informe.nombre_descarga,
+    }
+
+
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def exportar_informe_importaciones(request):
     columns = [key for key in request.data.get("columnas", DEFAULT_COLUMNS) if key in IMPORT_COLUMN_MAP]
     if not columns:
         return Response({"detail": "Seleccione al menos una columna."}, status=status.HTTP_400_BAD_REQUEST)
-    qs = _filtered_importaciones(request.data.get("filtros", {}), request.data.get("periodo_anio"), request.data.get("periodo_mes"))
-    workbook = Workbook(write_only=True)
-    sheet = workbook.create_sheet(title="Importaciones")
-    sheet.append([IMPORT_COLUMN_MAP[key] for key in columns])
-    catalogos = {
-        grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa"))
-        for grupo in ("aduanas", "bancos_comerciales", "clausulas_compra_venta", "comunas", "formas_pago", "formas_pago_gravamen", "monedas", "origen_divisas", "paises", "puertos", "regimen_importacion", "tipos_bulto", "tipos_carga", "tipos_operacion_din", "unidades_medida", "via_transporte", "vistos_buenos")
-    }
-    for row in qs.iterator(chunk_size=1000):
-        sheet.append([_column_value(row, key, catalogos) for key in columns])
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="informe_importaciones.xlsx"'
-    workbook.save(response)
-    return response
+    # A single month (periodo_anio/periodo_mes) is still accepted as a one-month range.
+    single = {"anio": request.data.get("periodo_anio"), "mes": request.data.get("periodo_mes")}
+    desde = parse_periodo(request.data.get("periodo_desde") or single)
+    hasta = parse_periodo(request.data.get("periodo_hasta") or single)
+    if not desde or not hasta:
+        return Response({"detail": "Indique mes y año desde y hasta."}, status=status.HTTP_400_BAD_REQUEST)
+    if desde > hasta:
+        return Response({"detail": "El período desde no puede ser posterior al período hasta."}, status=status.HTTP_400_BAD_REQUEST)
+    informe = InformeExcel.objects.create(
+        tipo="IMP", usuario=request.user,
+        parametros_json={
+            "columnas": columns, "filtros": request.data.get("filtros", {}),
+            "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]},
+        },
+        nombre_descarga=f"informe_importaciones_{desde[0]}-{desde[1]:02d}_a_{hasta[0]}-{hasta[1]:02d}.xlsx",
+    )
+    from reportes.tasks import generar_informe_importaciones
+
+    try:
+        generar_informe_importaciones.delay(informe.id)
+    except OperationalError:
+        generar_informe_importaciones(informe.id)
+    informe.refresh_from_db()
+    return Response(_informe_json(informe), status=status.HTTP_202_ACCEPTED)
+
+
+def _own_informe(request, informe_id):
+    informe = InformeExcel.objects.filter(id=informe_id).first()
+    if informe and (informe.usuario_id == request.user.id or request.user.is_superuser):
+        return informe
+    return None
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def informe_estado(request, informe_id: int):
+    informe = _own_informe(request, informe_id)
+    if not informe:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+    return Response(_informe_json(informe))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def informe_descargar(request, informe_id: int):
+    from reportes.tasks import informe_path
+
+    informe = _own_informe(request, informe_id)
+    if not informe or informe.estado != "LISTO" or not informe_path(informe).is_file():
+        return Response({"detail": "Informe no disponible."}, status=status.HTTP_404_NOT_FOUND)
+    return FileResponse(
+        informe_path(informe).open("rb"), as_attachment=True, filename=informe.nombre_descarga,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )

@@ -53,3 +53,61 @@ class InformeImportacionesUniversoTests(TestCase):
         by_rut = self.client.get("/api/reportes/importadores/", {"q": "76.123"}).json()
         by_ids = self.client.get("/api/reportes/importadores/", {"ids": str(self.sony.id)}).json()
         self.assertEqual([row["nombre"] for row in by_name + by_rut + by_ids], ["SONY CHILE LTDA"] * 3)
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"], CELERY_TASK_ALWAYS_EAGER=True)
+class InformeImportacionesRangoTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="IMP")
+        for anio, mes in ((2015, 6), (2025, 12), (2026, 1), (2026, 2), (2026, 3)):
+            Importacion.objects.create(archivo_origen=source, periodo_anio=anio, periodo_mes=mes, numero_ident=f"{anio}-{mes}", payload_json=din_row())
+        from django.contrib.auth import get_user_model
+
+        cls.user = get_user_model().objects.create_user("analista", password="x")
+        cls.other = get_user_model().objects.create_user("otro", password="x")
+
+    def setUp(self):
+        import tempfile
+        from unittest.mock import patch
+
+        self.client.force_login(self.user)
+        self.media = tempfile.TemporaryDirectory()
+        patcher = patch("reportes.tasks.INFORMES_DIR", __import__("pathlib").Path(self.media.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.media.cleanup)
+
+    def post(self, desde, hasta):
+        import json
+
+        body = {"columnas": ["numero_ident"], "filtros": {}, "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]}}
+        return self.client.post("/api/reportes/importaciones/exportar/", data=json.dumps(body), content_type="application/json")
+
+    def test_range_crosses_years_and_is_inclusive(self):
+        ids = set(_filtered_importaciones({}, desde=(2025, 12), hasta=(2026, 2)).values_list("numero_ident", flat=True))
+        self.assertEqual(ids, {"2025-12", "2026-1", "2026-2"})
+
+    def test_generates_in_background_and_downloads_only_for_owner(self):
+        import io
+
+        from openpyxl import load_workbook
+
+        response = self.post((2026, 1), (2026, 3))
+        self.assertEqual(response.status_code, 202)
+        informe = response.json()
+        self.assertEqual((informe["estado"], informe["filas_total"], informe["nombre_descarga"]), ("LISTO", 3, "informe_importaciones_2026-01_a_2026-03.xlsx"))
+        download = self.client.get(f"/api/reportes/informes/{informe['id']}/descargar/")
+        rows = list(load_workbook(io.BytesIO(b"".join(download.streaming_content)), read_only=True).active.iter_rows(values_only=True))
+        self.assertEqual(sorted(row[0] for row in rows[1:]), ["2026-1", "2026-2", "2026-3"])
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f"/api/reportes/informes/{informe['id']}/").status_code, 404)
+
+    def test_rejects_inverted_range_and_reports_excel_row_limit(self):
+        from unittest.mock import patch
+
+        self.assertEqual(self.post((2026, 3), (2026, 1)).status_code, 400)
+        with patch("reportes.tasks.EXCEL_MAX_ROWS", 2):
+            informe = self.post((2015, 1), (2026, 12)).json()
+        self.assertEqual(informe["estado"], "ERROR")
+        self.assertIn("Excel admite", informe["error"])

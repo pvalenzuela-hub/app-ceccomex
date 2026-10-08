@@ -1087,3 +1087,9 @@ h1 {
 @media (max-width: 800px) {
   .report-filters-panel .report-universe, .report-other-filters .report-filters { grid-template-columns: 1fr; }
 }
+
+.report-period { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 22px 0; padding: 14px; border: 1px solid #d4e0ed; border-radius: 10px; background: #f6faff; color: #425a73; font-size: 13px; font-weight: 700; }
+.report-period small { grid-column: 1 / -1; color: #718397; font-size: 12px; font-weight: 400; }
+.period-field { display: grid; gap: 6px; }
+.period-field > div { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 6px; }
+.period-field select { border: 1px solid #d4e0ed; border-radius: 8px; padding: 9px 8px; background: white; font: inherit; font-weight: 400; text-transform: capitalize; }
