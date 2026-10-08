@@ -11,3 +11,4 @@ coverage/
 *.log
 cargas/
 doc-req/
+.claude/settings.local.json

@@ -1067,3 +1067,7 @@ h1 {
   .login-access-panel { min-height: auto; padding: 48px 28px 56px; }
   .login-status { margin-bottom: 34px; }
 }
+
+.modal.dus-detail { width: min(1040px, 100%); max-height: 88vh; overflow: auto; }
+.modal.dus-detail > .table-wrap { display: block; }
+.modal.dus-detail h3 { margin: 4px 0 0; color: #102a47; font-size: 15px; }

@@ -1,5 +1,6 @@
 from django.urls import path
 
+from reportes.exportaciones import exportaciones_configuracion, exportar_informe_exportaciones
 from reportes.views import detalle_reporte, exportar_informe_importaciones, importadores_probables, importaciones_configuracion, partidas_importacion, perfiles_importadores, reportes, rubro_importacion_detalle, rubros_importaciones
 
 
@@ -13,4 +14,6 @@ urlpatterns = [
     path("importaciones/exportar/", exportar_informe_importaciones, name="informes-importaciones-exportar"),
     path("importaciones/rubros/", rubros_importaciones, name="informes-importaciones-rubros"),
     path("importaciones/rubros/<int:rubro_id>/", rubro_importacion_detalle, name="informes-importaciones-rubro"),
+    path("exportaciones/configuracion/", exportaciones_configuracion, name="informes-exportaciones-configuracion"),
+    path("exportaciones/exportar/", exportar_informe_exportaciones, name="informes-exportaciones-exportar"),
 ]

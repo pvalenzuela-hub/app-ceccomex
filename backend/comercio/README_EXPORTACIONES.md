@@ -37,3 +37,18 @@ docker compose exec backend python manage.py import_exportaciones \
 
 La subida web (`/api/comercio/upload/`) usa el mismo cargador: carga el TXT
 del ZIP que corresponde al tipo elegido (Base, Bultos o Documentos).
+
+## Consultas e informes
+
+Requieren sesión iniciada.
+
+- `GET /api/consultas/exportaciones/` — búsqueda paginada (Nº DUS, exportador,
+  año/meses, aduana, país destino, puerto embarque, arancel o su glosa,
+  mercadería, fechas); `.../exportar/` descarga el mismo filtro en Excel y
+  `.../dus/<numero>/` devuelve ítems, bultos y documentos de un DUS.
+  Página: `/consultas-exportaciones`.
+- `GET /api/reportes/exportaciones/configuracion/` y
+  `POST /api/reportes/exportaciones/exportar/` — constructor de informes por
+  mes: columnas con glosas de catálogo, las 84 columnas DUS, totales de bultos
+  y naves por DUS. Página: `/informes-exportaciones`. Los Excel se escriben con
+  XlsxWriter (un mes completo ≈ 40 s) y los montos van como números.

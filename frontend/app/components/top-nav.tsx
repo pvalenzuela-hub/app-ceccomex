@@ -36,8 +36,10 @@ export default function TopNav() {
       <p className="nav-brand">CEC COMEX</p>
       <div className="nav-links">
         <Link href="/dashboard">Dashboard</Link>
-        <Link href="/consultas">Consultas</Link>
+        <Link href="/consultas">Consultas Importaciones</Link>
         <Link href="/informes-importaciones">Informes Importaciones</Link>
+        <Link href="/consultas-exportaciones">Consultas Exportaciones</Link>
+        <Link href="/informes-exportaciones">Informes Exportaciones</Link>
         <Link href="/catalogos">Catálogos</Link>
         <Link href="/reportes">Reportes</Link>
         {isSuperuser ? <Link href="/usuarios">Usuarios</Link> : null}
