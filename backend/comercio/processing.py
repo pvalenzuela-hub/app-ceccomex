@@ -55,6 +55,22 @@ def parse_txt_line(tipo_archivo: str, line: str) -> dict:
     return {"raw_columns": parts}
 
 
+def normalize_rut(value: str) -> str:
+    return "".join(char for char in str(value).upper() if char.isalnum())
+
+
+def importers_by_key() -> dict:
+    """ImportadorProbable by RUT+DV; sector reports also list the DIN NUM_UNICO_IMPORTADOR here (empty DV)."""
+    from reportes.models import ImportadorProbable
+
+    importers = {}
+    for importer in ImportadorProbable.objects.all():
+        key = normalize_rut(f"{importer.rut}{importer.dv}")
+        if key and key not in importers:
+            importers[key] = importer
+    return importers
+
+
 def store_staging_rows(archivo_carga: ArchivoCarga, txt_content: str) -> int:
     ArchivoCargaStaging.objects.filter(archivo_carga=archivo_carga).delete()
     created = 0
@@ -82,16 +98,7 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
     staging_rows = ArchivoCargaStaging.objects.filter(archivo_carga=archivo_carga, procesado=True).order_by("nro_linea")
 
     if archivo_carga.tipo_archivo == "IMP":
-        from reportes.models import ImportadorProbable
-
-        def normalize_rut(value: str) -> str:
-            return "".join(char for char in str(value).upper() if char.isalnum())
-
-        importers = {}
-        for importer in ImportadorProbable.objects.all():
-            key = normalize_rut(f"{importer.rut}{importer.dv}")
-            if key and key not in importers:
-                importers[key] = importer
+        importers = importers_by_key()
         Importacion.objects.filter(archivo_origen=archivo_carga).delete()
         buffer = []
         batch_size = 1000
