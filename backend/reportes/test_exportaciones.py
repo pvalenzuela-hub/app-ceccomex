@@ -46,21 +46,41 @@ class ExportacionesConsultaInformeTests(TestCase):
         self.assertEqual([bulto["tipo_bulto_glosa"] for bulto in data["bultos"]], ["CAJA DE CARTON", "CAJA DE CARTON"])
         self.assertEqual(data["documentos"][0]["nave"], "POLAR ARGENTINA")
 
+    def report(self, filtros, columnas, desde=(2026, 2), hasta=(2026, 2)):
+        """Request a report (generated eagerly in tests) and return its spreadsheet rows."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        body = {"columnas": columnas, "filtros": filtros, "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]}}
+        with tempfile.TemporaryDirectory() as folder, patch("reportes.tasks.INFORMES_DIR", Path(folder)), override_settings(CELERY_TASK_ALWAYS_EAGER=True):
+            informe = self.client.post("/api/reportes/exportaciones/exportar/", data=json.dumps(body), content_type="application/json").json()
+            self.assertEqual(informe["estado"], "LISTO", informe)
+            download = self.client.get(f"/api/reportes/informes/{informe['id']}/descargar/")
+            return list(load_workbook(io.BytesIO(b"".join(download.streaming_content)), read_only=True).active.iter_rows(values_only=True))
+
     def test_report_writes_numbers_dus_fields_and_bulto_totals(self):
         config = self.client.get("/api/reportes/exportaciones/configuracion/").json()
         self.assertEqual(config["periodos"], [{"anio": 2026, "mes": 2}])
-        response = self.client.post(
-            "/api/reportes/exportaciones/exportar/",
-            data=json.dumps({
-                "periodo_anio": 2026, "periodo_mes": 2, "filtros": {"partidas": ["08061099"]},
-                "columnas": ["numero_ident", "pais_destino_glosa", "valor_fob", "dus:ATRIBUTO1", "total_bultos", "tipos_bulto", "naves"],
-            }),
-            content_type="application/json",
+        rows = self.report(
+            {"partidas": ["08061099"]},
+            ["numero_ident", "pais_destino_glosa", "valor_fob", "dus:ATRIBUTO1", "total_bultos", "tipos_bulto", "naves"],
         )
-        self.assertEqual(response.status_code, 200)
-        rows = list(load_workbook(io.BytesIO(b"".join(response.streaming_content)), read_only=True).active.iter_rows(values_only=True))
         self.assertEqual(rows[1], ("13213653", "ECUADOR", 100, "RED GLOBE", 12, "CAJA DE CARTON", "POLAR ARGENTINA"))
         self.assertEqual(len(rows), 2)
+
+    def test_report_filters_products_without_accents_exporters_and_range(self):
+        self.assertEqual([row[0] for row in self.report({"productos": ["úvas", "red globe"]}, ["item"])[1:]], ["2"])
+        self.assertEqual(len(self.report({"exportadores": ["7435"]}, ["item"])), 3)
+        self.assertEqual(len(self.report({"exportadores": ["1"]}, ["item"])), 1)
+        self.assertEqual(len(self.report({}, ["item"], desde=(2026, 3), hasta=(2026, 9))), 1)
+
+    def test_export_rubros_are_separate_from_import_rubros(self):
+        payload = json.dumps({"nombre": "Fruta", "configuracion_json": {"columnas": ["item"]}})
+        self.assertEqual(self.client.post("/api/reportes/exportaciones/rubros/", data=payload, content_type="application/json").status_code, 201)
+        self.assertEqual(self.client.post("/api/reportes/importaciones/rubros/", data=payload, content_type="application/json").status_code, 201)
+        self.assertEqual(self.client.post("/api/reportes/exportaciones/rubros/", data=payload, content_type="application/json").status_code, 400)
+        self.assertEqual([r["nombre"] for r in self.client.get("/api/reportes/exportaciones/rubros/").json()], ["Fruta"])
 
     def test_report_requires_period(self):
         response = self.client.post("/api/reportes/exportaciones/exportar/", data=json.dumps({"columnas": ["numero_ident"]}), content_type="application/json")

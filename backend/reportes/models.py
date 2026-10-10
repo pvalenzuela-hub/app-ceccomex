@@ -73,13 +73,19 @@ class ReporteSectorialDetalle(models.Model):
 
 
 class RubroImportacion(models.Model):
-    nombre = models.CharField(max_length=120, unique=True)
+    """Saved report configuration (columns, filters, period range) for the import or export report builder."""
+
+    TIPO_CHOICES = [("IMP", "Importaciones"), ("EXP", "Exportaciones")]
+
+    tipo = models.CharField(max_length=3, choices=TIPO_CHOICES, default="IMP")
+    nombre = models.CharField(max_length=120)
     configuracion_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
     actualizado = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["nombre"]
+        constraints = [models.UniqueConstraint(fields=["tipo", "nombre"], name="rubro_tipo_nombre_uniq")]
 
 
 class InformeExcel(models.Model):

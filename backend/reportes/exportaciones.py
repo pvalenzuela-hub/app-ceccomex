@@ -4,6 +4,8 @@ import tempfile
 from collections import defaultdict
 
 import xlsxwriter
+from django.db.models import Func, Q, TextField
+from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.http import FileResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -13,6 +15,7 @@ from rest_framework.response import Response
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.dus_txt import DUS_COLUMNS
 from comercio.models import Exportacion, ExportacionBulto, ExportacionDocTransporte
+from reportes.views import _period_range_q, _without_accents, parse_periodo, solicitar_informe
 
 
 # (field on Exportacion, catalog group) for every code that has a description.
@@ -118,8 +121,19 @@ def _int_or_none(value):
         return None
 
 
-def filtered_exportaciones_informe(filters, periodo_anio, periodo_mes):
-    qs = Exportacion.objects.order_by("fecha_date", "numero_ident", "id")
+PRODUCT_DUS_FIELDS = ("NOMBRE", "ATRIBUTO1", "ATRIBUTO2", "ATRIBUTO3", "ATRIBUTO4", "ATRIBUTO5", "ATRIBUTO6")
+
+
+def _product_text():
+    """Mercadería + variedades, concatenated without separators: DUS splits descriptions mid-word too."""
+    fields = KeyTransform("dus_fields", "payload_json")
+    return Func(*[KeyTextTransform(name, fields) for name in PRODUCT_DUS_FIELDS], function="CONCAT", output_field=TextField())
+
+
+def filtered_exportaciones_informe(filters, periodo_anio=None, periodo_mes=None, desde=None, hasta=None):
+    qs = Exportacion.objects.order_by("periodo_anio", "periodo_mes", "fecha_date", "numero_ident", "id")
+    if desde and hasta:
+        qs = qs.filter(_period_range_q(desde, hasta))
     if _int_or_none(periodo_anio):
         qs = qs.filter(periodo_anio=int(periodo_anio))
     if _int_or_none(periodo_mes):
@@ -131,29 +145,45 @@ def filtered_exportaciones_informe(filters, periodo_anio, periodo_mes):
     partidas = _selected_values(filters.get("partidas", []))
     if partidas:
         qs = qs.filter(partida_arancelaria_codigo__in=partidas)
+    exportadores = _selected_values(filters.get("exportadores", []))
+    if exportadores:
+        qs = qs.filter(exportador_codigo__in=exportadores)
+    productos = _selected_values(filters.get("productos", []))
+    if productos:
+        product_filter = Q()
+        for term in productos:
+            for variant in {term, _without_accents(term)}:
+                product_filter |= Q(texto_producto__icontains=variant)
+        qs = qs.annotate(texto_producto=_product_text()).filter(product_filter)
     return qs
 
 
-def _bultos_by_dus(periodo_anio, periodo_mes, catalogs):
+def _in_range(model, desde, hasta):
+    return model.objects.filter(_period_range_q(desde, hasta))
+
+
+def _bultos_by_dus(desde, hasta, catalogs):
+    """{(anio, mes, numero_ident): (total bultos, tipos)} for the report range."""
     totals = defaultdict(lambda: [0, set()])
-    rows = ExportacionBulto.objects.filter(periodo_anio=periodo_anio, periodo_mes=periodo_mes)
-    for numero, cantidad, tipo in rows.values_list("numero_ident", "cantidad_bultos", "tipo_bulto_codigo").iterator(chunk_size=5000):
+    rows = _in_range(ExportacionBulto, desde, hasta).values_list("periodo_anio", "periodo_mes", "numero_ident", "cantidad_bultos", "tipo_bulto_codigo")
+    for anio, mes, numero, cantidad, tipo in rows.iterator(chunk_size=5000):
+        key = (anio, mes, numero)
         try:
-            totals[numero][0] += int(float(cantidad or 0))
+            totals[key][0] += int(float(cantidad or 0))
         except ValueError:
             pass
-        totals[numero][1].add(glosa(catalogs, "tipos_bulto", tipo) or tipo)
-    return {numero: (total, ", ".join(sorted(tipos))) for numero, (total, tipos) in totals.items()}
+        totals[key][1].add(glosa(catalogs, "tipos_bulto", tipo) or tipo)
+    return {key: (total, ", ".join(sorted(tipos))) for key, (total, tipos) in totals.items()}
 
 
-def _docs_by_dus(periodo_anio, periodo_mes):
+def _docs_by_dus(desde, hasta):
     docs = defaultdict(lambda: ([], [], []))
-    rows = ExportacionDocTransporte.objects.filter(periodo_anio=periodo_anio, periodo_mes=periodo_mes).order_by("numero_ident", "secuencia")
-    for numero, documento, nave, viaje in rows.values_list("numero_ident", "numero_documento", "nave", "numero_viaje").iterator(chunk_size=5000):
-        for values, value in zip(docs[numero], (documento, nave, viaje)):
+    rows = _in_range(ExportacionDocTransporte, desde, hasta).order_by("numero_ident", "secuencia")
+    for anio, mes, numero, documento, nave, viaje in rows.values_list("periodo_anio", "periodo_mes", "numero_ident", "numero_documento", "nave", "numero_viaje").iterator(chunk_size=5000):
+        for values, value in zip(docs[(anio, mes, numero)], (documento, nave, viaje)):
             if value and value not in values:
                 values.append(value)
-    return {numero: tuple(" | ".join(values) for values in lists) for numero, lists in docs.items()}
+    return {key: tuple(" | ".join(values) for values in lists) for key, lists in docs.items()}
 
 
 def export_column_value(row, key, catalogs, bultos=None, docs=None):
@@ -169,10 +199,10 @@ def export_column_value(row, key, catalogs, bultos=None, docs=None):
     if key == "registro_incompleto":
         return "Sí" if row.registro_incompleto else ""
     if key in BULTO_COLUMNS:
-        total, tipos = (bultos or {}).get(row.numero_ident, ("", ""))
+        total, tipos = (bultos or {}).get((row.periodo_anio, row.periodo_mes, row.numero_ident), ("", ""))
         return total if key == "total_bultos" else tipos
     if key in DOC_COLUMNS:
-        values = (docs or {}).get(row.numero_ident, ("", "", ""))
+        values = (docs or {}).get((row.periodo_anio, row.periodo_mes, row.numero_ident), ("", "", ""))
         return values[("documentos_transporte", "naves", "viajes").index(key)]
     if key in NUMERIC_COLUMNS:
         value = getattr(row, key)
@@ -196,21 +226,18 @@ def exportaciones_configuracion(request):
     })
 
 
+def informe_exportaciones_rows(parametros):
+    """(header, queryset, row function) for a stored report request; used by the Celery task."""
+    columns = parametros["columnas"]
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    qs = filtered_exportaciones_informe(parametros.get("filtros", {}), desde=desde, hasta=hasta)
+    catalogs = load_catalogs()
+    bultos = _bultos_by_dus(desde, hasta, catalogs) if BULTO_COLUMNS.intersection(columns) else None
+    docs = _docs_by_dus(desde, hasta) if DOC_COLUMNS.intersection(columns) else None
+    return [EXPORT_COLUMN_MAP[key] for key in columns], qs, lambda row: [export_column_value(row, key, catalogs, bultos, docs) for key in columns]
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def exportar_informe_exportaciones(request):
-    columns = [key for key in request.data.get("columnas", DEFAULT_EXPORT_COLUMNS) if key in EXPORT_COLUMN_MAP]
-    if not columns:
-        return Response({"detail": "Seleccione al menos una columna."}, status=status.HTTP_400_BAD_REQUEST)
-    periodo_anio, periodo_mes = _int_or_none(request.data.get("periodo_anio")), _int_or_none(request.data.get("periodo_mes"))
-    if not periodo_anio or not periodo_mes:
-        return Response({"detail": "Indique mes y año del informe."}, status=status.HTTP_400_BAD_REQUEST)
-    qs = filtered_exportaciones_informe(request.data.get("filtros", {}), periodo_anio, periodo_mes)
-    catalogs = load_catalogs()
-    bultos = _bultos_by_dus(periodo_anio, periodo_mes, catalogs) if BULTO_COLUMNS.intersection(columns) else None
-    docs = _docs_by_dus(periodo_anio, periodo_mes) if DOC_COLUMNS.intersection(columns) else None
-    return xlsx_response(
-        f"informe_exportaciones_{periodo_anio}_{periodo_mes:02d}.xlsx", "Exportaciones",
-        [EXPORT_COLUMN_MAP[key] for key in columns],
-        ([export_column_value(row, key, catalogs, bultos, docs) for key in columns] for row in qs.iterator(chunk_size=2000)),
-    )
+    return solicitar_informe(request, "EXP", EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, "informe_exportaciones")

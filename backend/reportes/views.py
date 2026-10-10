@@ -273,18 +273,18 @@ def importaciones_configuracion(request):
     })
 
 
-@api_view(["GET", "POST"])
-def rubros_importaciones(request):
+def _rubros(request, tipo):
     if request.method == "GET":
-        return Response(RubroImportacionSerializer(RubroImportacion.objects.all(), many=True).data)
+        return Response(RubroImportacionSerializer(RubroImportacion.objects.filter(tipo=tipo), many=True).data)
     serializer = RubroImportacionSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    return Response(RubroImportacionSerializer(serializer.save()).data, status=status.HTTP_201_CREATED)
+    if RubroImportacion.objects.filter(tipo=tipo, nombre=serializer.validated_data["nombre"]).exists():
+        return Response({"nombre": ["Ya existe un rubro con ese nombre."]}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(RubroImportacionSerializer(serializer.save(tipo=tipo)).data, status=status.HTTP_201_CREATED)
 
 
-@api_view(["PUT", "DELETE"])
-def rubro_importacion_detalle(request, rubro_id: int):
-    rubro = RubroImportacion.objects.filter(id=rubro_id).first()
+def _rubro_detalle(request, rubro_id, tipo):
+    rubro = RubroImportacion.objects.filter(id=rubro_id, tipo=tipo).first()
     if not rubro:
         return Response(status=status.HTTP_404_NOT_FOUND)
     if request.method == "DELETE":
@@ -292,7 +292,31 @@ def rubro_importacion_detalle(request, rubro_id: int):
         return Response(status=status.HTTP_204_NO_CONTENT)
     serializer = RubroImportacionSerializer(rubro, data=request.data)
     serializer.is_valid(raise_exception=True)
+    if RubroImportacion.objects.filter(tipo=tipo, nombre=serializer.validated_data["nombre"]).exclude(id=rubro.id).exists():
+        return Response({"nombre": ["Ya existe un rubro con ese nombre."]}, status=status.HTTP_400_BAD_REQUEST)
     return Response(RubroImportacionSerializer(serializer.save()).data)
+
+
+@api_view(["GET", "POST"])
+def rubros_importaciones(request):
+    return _rubros(request, "IMP")
+
+
+@api_view(["PUT", "DELETE"])
+def rubro_importacion_detalle(request, rubro_id: int):
+    return _rubro_detalle(request, rubro_id, "IMP")
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def rubros_exportaciones(request):
+    return _rubros(request, "EXP")
+
+
+@api_view(["PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def rubro_exportacion_detalle(request, rubro_id: int):
+    return _rubro_detalle(request, rubro_id, "EXP")
 
 
 @api_view(["GET"])
@@ -327,10 +351,9 @@ def _informe_json(informe):
     }
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def exportar_informe_importaciones(request):
-    columns = [key for key in request.data.get("columnas", DEFAULT_COLUMNS) if key in IMPORT_COLUMN_MAP]
+def solicitar_informe(request, tipo, column_map, default_columns, prefijo):
+    """Validate a report request, store it as InformeExcel and queue it for the Celery worker."""
+    columns = [key for key in request.data.get("columnas", default_columns) if key in column_map]
     if not columns:
         return Response({"detail": "Seleccione al menos una columna."}, status=status.HTTP_400_BAD_REQUEST)
     # A single month (periodo_anio/periodo_mes) is still accepted as a one-month range.
@@ -342,21 +365,27 @@ def exportar_informe_importaciones(request):
     if desde > hasta:
         return Response({"detail": "El período desde no puede ser posterior al período hasta."}, status=status.HTTP_400_BAD_REQUEST)
     informe = InformeExcel.objects.create(
-        tipo="IMP", usuario=request.user,
+        tipo=tipo, usuario=request.user,
         parametros_json={
             "columnas": columns, "filtros": request.data.get("filtros", {}),
             "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]},
         },
-        nombre_descarga=f"informe_importaciones_{desde[0]}-{desde[1]:02d}_a_{hasta[0]}-{hasta[1]:02d}.xlsx",
+        nombre_descarga=f"{prefijo}_{desde[0]}-{desde[1]:02d}_a_{hasta[0]}-{hasta[1]:02d}.xlsx",
     )
-    from reportes.tasks import generar_informe_importaciones
+    from reportes.tasks import generar_informe
 
     try:
-        generar_informe_importaciones.delay(informe.id)
+        generar_informe.delay(informe.id)
     except OperationalError:
-        generar_informe_importaciones(informe.id)
+        generar_informe(informe.id)
     informe.refresh_from_db()
     return Response(_informe_json(informe), status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def exportar_informe_importaciones(request):
+    return solicitar_informe(request, "IMP", IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, "informe_importaciones")
 
 
 def _own_informe(request, informe_id):

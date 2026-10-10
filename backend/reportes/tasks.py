@@ -50,10 +50,19 @@ def _purge_old_files():
             path.unlink(missing_ok=True)
 
 
-@shared_task
-def generar_informe_importaciones(informe_id: int) -> None:
+def _rows_for(informe):
+    """(sheet name, header, queryset, row function) for the report type."""
+    if informe.tipo == "EXP":
+        from reportes.exportaciones import informe_exportaciones_rows
+
+        return ("Exportaciones", *informe_exportaciones_rows(informe.parametros_json))
     from reportes.views import informe_importaciones_rows
 
+    return ("Importaciones", *informe_importaciones_rows(informe.parametros_json))
+
+
+@shared_task
+def generar_informe(informe_id: int) -> None:
     informe = InformeExcel.objects.filter(id=informe_id).first()
     if not informe:
         return
@@ -61,7 +70,7 @@ def generar_informe_importaciones(informe_id: int) -> None:
     _purge_old_files()
     partial = informe_path(informe).with_suffix(".xlsx.part")
     try:
-        header, qs, values = informe_importaciones_rows(informe.parametros_json)
+        sheet_name, header, qs, values = _rows_for(informe)
         total = qs.count()
         _update(informe_id, estado="PROCESANDO", filas_total=total)
         if total > EXCEL_MAX_ROWS:
@@ -69,7 +78,7 @@ def generar_informe_importaciones(informe_id: int) -> None:
                 f"El informe tiene {total:,} filas y Excel admite {EXCEL_MAX_ROWS:,}. Acote el período o agregue filtros.".replace(",", ".")
             )
         workbook = xlsxwriter.Workbook(str(partial), {"constant_memory": True, "strings_to_numbers": False})
-        sheet = workbook.add_worksheet("Importaciones")
+        sheet = workbook.add_worksheet(sheet_name)
         sheet.write_row(0, 0, header)
         with _full_result_cursor_plans():
             for number, row in enumerate(qs.iterator(chunk_size=2000), start=1):
@@ -84,3 +93,7 @@ def generar_informe_importaciones(informe_id: int) -> None:
         _update(informe_id, estado="ERROR", error=str(exc)[:2000])
         if not isinstance(exc, ValueError):
             raise
+
+
+# Previous task name; keeps messages queued before the rename working.
+generar_informe_importaciones = shared_task(name="reportes.tasks.generar_informe_importaciones")(generar_informe.run)

@@ -1,7 +1,7 @@
 from django.urls import path
 
 from reportes.exportaciones import exportaciones_configuracion, exportar_informe_exportaciones
-from reportes.views import detalle_reporte, informe_descargar, informe_estado, exportar_informe_importaciones, importadores_probables, importaciones_configuracion, partidas_importacion, perfiles_importadores, reportes, rubro_importacion_detalle, rubros_importaciones
+from reportes.views import rubro_exportacion_detalle, rubros_exportaciones, detalle_reporte, informe_descargar, informe_estado, exportar_informe_importaciones, importadores_probables, importaciones_configuracion, partidas_importacion, perfiles_importadores, reportes, rubro_importacion_detalle, rubros_importaciones
 
 
 urlpatterns = [
@@ -16,6 +16,8 @@ urlpatterns = [
     path("importaciones/rubros/<int:rubro_id>/", rubro_importacion_detalle, name="informes-importaciones-rubro"),
     path("informes/<int:informe_id>/", informe_estado, name="informe-estado"),
     path("informes/<int:informe_id>/descargar/", informe_descargar, name="informe-descargar"),
+    path("exportaciones/rubros/", rubros_exportaciones, name="informes-exportaciones-rubros"),
+    path("exportaciones/rubros/<int:rubro_id>/", rubro_exportacion_detalle, name="informes-exportaciones-rubro"),
     path("exportaciones/configuracion/", exportaciones_configuracion, name="informes-exportaciones-configuracion"),
     path("exportaciones/exportar/", exportar_informe_exportaciones, name="informes-exportaciones-exportar"),
 ]
