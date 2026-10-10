@@ -1,3 +1,4 @@
+from comercio.busqueda import texto_producto_importacion
 from comercio.models import ArchivoCarga, ArchivoCargaStaging, Importacion
 
 
@@ -133,6 +134,7 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
                 valor_flete=data.get("valor_flete", ""),
                 valor_seguro=data.get("valor_seguro", ""),
                 valor_cif=data.get("valor_cif", ""),
+                texto_producto=texto_producto_importacion(data),
                 payload_json=data,
             ))
             processed += 1

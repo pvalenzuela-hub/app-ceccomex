@@ -1,5 +1,6 @@
 from django.test import TestCase, override_settings
 
+from comercio.busqueda import texto_producto_importacion
 from comercio.models import ArchivoCarga, Importacion
 from reportes.models import ImportadorProbable
 from reportes.views import DIN_LABELS, _filtered_importaciones
@@ -29,6 +30,10 @@ class InformeImportacionesUniversoTests(TestCase):
             **common, numero_ident="2", aduana_codigo="14", pais_origen_codigo="219",
             payload_json={"legacy_fields": {"MERCADERIA": "MANGO", "ATRI1": "MACHU PICCHU-F", "PAI_ADQ": "219"}},
         )
+
+        for row in Importacion.objects.all():
+            row.texto_producto = texto_producto_importacion(row.payload_json)
+            row.save(update_fields=["texto_producto"])
 
     def ids(self, filters):
         return set(_filtered_importaciones(filters, 2026, 2).values_list("numero_ident", flat=True))
@@ -116,5 +121,6 @@ class InformeImportacionesRangoTests(TestCase):
 class ProductoSinTildesTests(TestCase):
     def test_accented_term_matches_unaccented_customs_text(self):
         source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="IMP")
-        Importacion.objects.create(archivo_origen=source, periodo_anio=2015, periodo_mes=1, numero_ident="1", payload_json={"legacy_fields": {"MERCADERIA": "NEUMATICOS RADIALES"}})
+        payload = {"legacy_fields": {"MERCADERIA": "NEUMATICOS RADIALES"}}
+        Importacion.objects.create(archivo_origen=source, periodo_anio=2015, periodo_mes=1, numero_ident="1", payload_json=payload, texto_producto=texto_producto_importacion(payload))
         self.assertEqual(_filtered_importaciones({"productos": ["neumáticos"]}, 2015, 1).count(), 1)

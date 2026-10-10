@@ -4,8 +4,6 @@ import tempfile
 from collections import defaultdict
 
 import xlsxwriter
-from django.db.models import Func, Q, TextField
-from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.http import FileResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -15,7 +13,7 @@ from rest_framework.response import Response
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.dus_txt import DUS_COLUMNS
 from comercio.models import Exportacion, ExportacionBulto, ExportacionDocTransporte
-from reportes.views import _period_range_q, _without_accents, parse_periodo, solicitar_informe
+from reportes.views import _period_range_q, parse_periodo, producto_q, solicitar_informe
 
 
 # (field on Exportacion, catalog group) for every code that has a description.
@@ -121,15 +119,6 @@ def _int_or_none(value):
         return None
 
 
-PRODUCT_DUS_FIELDS = ("NOMBRE", "ATRIBUTO1", "ATRIBUTO2", "ATRIBUTO3", "ATRIBUTO4", "ATRIBUTO5", "ATRIBUTO6")
-
-
-def _product_text():
-    """Mercadería + variedades, concatenated without separators: DUS splits descriptions mid-word too."""
-    fields = KeyTransform("dus_fields", "payload_json")
-    return Func(*[KeyTextTransform(name, fields) for name in PRODUCT_DUS_FIELDS], function="CONCAT", output_field=TextField())
-
-
 def filtered_exportaciones_informe(filters, periodo_anio=None, periodo_mes=None, desde=None, hasta=None):
     qs = Exportacion.objects.order_by("periodo_anio", "periodo_mes", "fecha_date", "numero_ident", "id")
     if desde and hasta:
@@ -150,11 +139,7 @@ def filtered_exportaciones_informe(filters, periodo_anio=None, periodo_mes=None,
         qs = qs.filter(exportador_codigo__in=exportadores)
     productos = _selected_values(filters.get("productos", []))
     if productos:
-        product_filter = Q()
-        for term in productos:
-            for variant in {term, _without_accents(term)}:
-                product_filter |= Q(texto_producto__icontains=variant)
-        qs = qs.annotate(texto_producto=_product_text()).filter(product_filter)
+        qs = qs.filter(producto_q(productos))
     return qs
 
 

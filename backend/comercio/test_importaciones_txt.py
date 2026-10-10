@@ -65,3 +65,13 @@ class ImportacionesTxtCommandTests(TestCase):
             call_command("import_importaciones_txt", str(self.zip([din_line(unico="777")], "otro.zip")), stdout=io.StringIO())
         call_command("import_importaciones_txt", str(self.zip([din_line(unico="777")], "otro.zip")), "--replace", stdout=io.StringIO())
         self.assertEqual(list(Importacion.objects.values_list("numero_ident", flat=True)), ["777"])
+
+
+class TextoProductoTests(TestCase):
+    def test_normalizes_and_joins_fields_split_mid_word(self):
+        from comercio.busqueda import texto_producto_exportacion, texto_producto_importacion
+
+        din = {"raw_columns": [""] * 133 + ["Pantalla con t", "ODOS SUS", "", "", "", "", "Neumáticos"]}
+        self.assertEqual(texto_producto_importacion(din), "PANTALLA CON TODOS SUSNEUMATICOS")
+        self.assertEqual(texto_producto_importacion({"legacy_fields": {"MERCADERIA": "MANGO", "ATRI1": "Ñandú"}}), "MANGONANDU")
+        self.assertEqual(texto_producto_exportacion({"dus_fields": {"NOMBRE": "uvas", "ATRIBUTO1": "red globe"}}), "UVASRED GLOBE")

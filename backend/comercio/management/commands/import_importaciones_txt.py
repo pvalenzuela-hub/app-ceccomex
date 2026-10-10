@@ -12,6 +12,7 @@ from zipfile import BadZipFile, ZipFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
+from comercio.busqueda import texto_producto_importacion
 from comercio.models import ArchivoCarga, Importacion
 from comercio.processing import importers_by_key, normalize_rut, parse_txt_line
 
@@ -85,6 +86,7 @@ def read_member(archive, member, *, on_batch=None, batch_size=1000, importers=No
                     valor_flete=data["valor_flete"],
                     valor_seguro=data["valor_seguro"],
                     valor_cif=data["valor_cif"],
+                    texto_producto=texto_producto_importacion(data),
                     payload_json=data,
                 ))
                 if len(batch) >= batch_size:

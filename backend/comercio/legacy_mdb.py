@@ -12,6 +12,8 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from comercio.busqueda import texto_producto_importacion
+
 
 EXPECTED_ROWS = {
     1: 274536,
@@ -85,6 +87,7 @@ def map_importacion(row, month):
         raise ValueError(f"FEC_ACE fuera del período {period}: {fecha_original!r}")
 
     legacy = {key: value.strip() if value is not None else "" for key, value in row.items()}
+    payload = {"source_format": SOURCE_FORMAT, "legacy_fields": legacy}
     return {
         "periodo_anio": 2015,
         "periodo_mes": month,
@@ -102,7 +105,8 @@ def map_importacion(row, month):
         "valor_flete": _money(row["FLE_ITEM"], "FLE_ITEM"),
         "valor_seguro": _money(row["SEG_ITEM"], "SEG_ITEM"),
         "valor_cif": _money(row["CIF_ITEM"], "CIF_ITEM"),
-        "payload_json": {"source_format": SOURCE_FORMAT, "legacy_fields": legacy},
+        "texto_producto": texto_producto_importacion(payload),
+        "payload_json": payload,
     }
 
 

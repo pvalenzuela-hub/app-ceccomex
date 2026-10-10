@@ -1,7 +1,4 @@
-import unicodedata
-
-from django.db.models import Func, Q, TextField
-from django.db.models.fields.json import KeyTextTransform, KeyTransform
+from django.db.models import Q
 from django.core.paginator import Paginator
 from django.http import FileResponse
 from kombu.exceptions import OperationalError
@@ -11,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
+from comercio.busqueda import normalizar
 from comercio.legacy_mdb import LEGACY_COLUMNS
 from comercio.models import Importacion
 from reportes.models import ImportadorProbable, InformeExcel, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
@@ -103,23 +101,12 @@ def _selected_values(value):
     return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
 
 
-# Product description fields: DIN TXT positions DNOMBRE..ATR-6 and their MDB 2015 equivalents.
-PRODUCT_RAW_INDEXES = range(DIN_LABELS.index("DNOMBRE"), DIN_LABELS.index("ATR-6") + 1)
-PRODUCT_LEGACY_FIELDS = ("MERCADERIA", "ATRI1", "ATRI2", "ATRI3", "ATRI4", "ATRI5", "ATRI6")
-
-
-def _without_accents(text):
-    return "".join(char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char))
-
-
-def _product_text():
-    """Concatenate without separators: Aduana splits long descriptions mid-word across these fields."""
-    raw = KeyTransform("raw_columns", "payload_json")
-    legacy = KeyTransform("legacy_fields", "payload_json")
-    parts = [KeyTextTransform(str(index), raw) for index in PRODUCT_RAW_INDEXES]
-    parts += [KeyTextTransform(name, legacy) for name in PRODUCT_LEGACY_FIELDS]
-    # A single flat CONCAT (NULL-skipping in PostgreSQL and SQLite 3.44+); Django's Concat nests one pair per field.
-    return Func(*parts, function="CONCAT", output_field=TextField())
+def producto_q(terms):
+    """Any of the terms inside the normalized, trigram-indexed product text (see comercio.busqueda)."""
+    match = Q()
+    for term in terms:
+        match |= Q(texto_producto__contains=normalizar(term))
+    return match
 
 
 def parse_periodo(value):
@@ -164,12 +151,7 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
         qs = qs.filter(importador_probable_sugerido_id__in=importadores)
     productos = _selected_values(filters.get("productos", []))
     if productos:
-        product_filter = Q()
-        for term in productos:
-            # Aduana descriptions are mostly unaccented ("NEUMATICOS"): also try the term without accents.
-            for variant in {term, _without_accents(term)}:
-                product_filter |= Q(texto_producto__icontains=variant)
-        qs = qs.annotate(texto_producto=_product_text()).filter(product_filter)
+        qs = qs.filter(producto_q(productos))
     regimenes = _selected_values(filters.get("regimenes", []))
     if regimenes:
         qs = qs.filter(

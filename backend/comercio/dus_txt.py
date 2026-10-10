@@ -5,6 +5,8 @@ import unicodedata
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+from comercio.busqueda import texto_producto_exportacion
+
 
 # Column order from doc-req/export/descripcion-y-estructura-de-datos- dus.xlsx (hoja "titulos").
 DUS_COLUMNS = tuple("""
@@ -146,6 +148,7 @@ def map_exportacion(fields, periodo):
         "valor_cif_dus": amounts["VALORCIF"],
         "valor_liquido_retorno_dus": amounts["VALORLIQUIDORETORNO"],
         "registro_incompleto": incompleto,
+        "texto_producto": texto_producto_exportacion(payload),
         "payload_json": payload,
     }
 

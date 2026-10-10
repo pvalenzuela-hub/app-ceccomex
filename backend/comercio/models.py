@@ -63,6 +63,8 @@ class Importacion(models.Model):
     valor_flete = models.CharField(max_length=32, blank=True)
     valor_seguro = models.CharField(max_length=32, blank=True)
     valor_cif = models.CharField(max_length=32, blank=True)
+    # Normalized product description for report searches (comercio.busqueda); trigram-indexed in PostgreSQL.
+    texto_producto = models.TextField(blank=True, default="")
     payload_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
 
@@ -105,6 +107,7 @@ class Exportacion(models.Model):
     valor_cif_dus = models.CharField(max_length=32, blank=True)
     valor_liquido_retorno_dus = models.CharField(max_length=32, blank=True)
     registro_incompleto = models.BooleanField(default=False)
+    texto_producto = models.TextField(blank=True, default="")
     payload_json = models.JSONField(default=dict)
     creado = models.DateTimeField(auto_now_add=True)
 
