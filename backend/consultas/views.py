@@ -11,6 +11,7 @@ from consultas.resolvers import resolve_catalogo
 from consultas.resolvers import pendientes_importaciones
 from consultas.models import ConsultaGuardada
 from catalogos.models import PartidaArancelaria
+from reportes.views import to_number
 
 
 @api_view(["GET"])
@@ -158,10 +159,10 @@ def exportar_importaciones(request):
             item.partida_arancelaria_codigo,
             partida.get("glosa", ""),
             item.glosa_mercancia,
-            item.valor_fob,
-            item.valor_flete,
-            item.valor_seguro,
-            item.valor_cif,
+            to_number(item.valor_fob),
+            to_number(item.valor_flete),
+            to_number(item.valor_seguro),
+            to_number(item.valor_cif),
             item.creado.isoformat(),
         ])
 

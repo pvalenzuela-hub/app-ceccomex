@@ -1,3 +1,5 @@
+import math
+
 from django.db.models import Q
 from django.core.paginator import Paginator
 from django.http import FileResponse
@@ -131,6 +133,31 @@ LEGACY_COLUMN_ALIASES.update({f"mdb:{field}": f"raw:{index}" for index, field in
 LEGACY_COLUMN_ALIASES.update({"mdb:FOB_ITEM": "valor_fob", "mdb:FLE_ITEM": "valor_flete", "mdb:SEG_ITEM": "valor_seguro"})
 
 
+# DIN amounts, quantities and percentages (doc-req/import/descripcion-y-estructura-de-datos-din.xlsx); codes,
+# identifiers and dates stay as text. TXT values use a decimal comma and MDB 2015 a decimal point.
+AMOUNT_DIN_LABELS = {
+    "TOTINSUM", "NUMHOJINS", "NUMHOJANE", "NUM_SEC", "NUMDIAS", "VALEXFAB", "MONGASFOB", "TOT_ITEMS", "FOB",
+    "TOT_HOJAS", "FLETE", "TOT_BULTOS", "SEGURO", "TOT_PESO", "CIF", "MON_OTRO", "MON_178", "MON_191",
+    "TASA", "MON_699", "MON_199", "AJU-ITEM", "CANT-MERC", "MERMAS", "PRE-UNIT", "CIF-ITEM", "ADVAL-ALA",
+    "VALAD", *[f"CANT_BUL{i}" for i in range(1, 9)], *[f"MON_OTR{i}" for i in range(1, 8)],
+    *[f"VAL_60{i}" for i in range(1, 8)], *[f"OTRO{i}" for i in range(1, 5)], *[f"VAL{i}" for i in range(1, 5)],
+}
+AMOUNT_COLUMNS = {f"raw:{index}" for index, label in enumerate(DIN_LABELS) if label in AMOUNT_DIN_LABELS}
+AMOUNT_COLUMNS |= {"valor_fob", "valor_flete", "valor_seguro", "valor_cif", "precio_unitario_cif"}
+
+
+def to_number(value):
+    """Spreadsheet number from "1146,35" (DIN TXT) or "1269.29" (MDB); blank stays blank, other text is kept."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        number = float(text.replace(",", "."))
+    except ValueError:
+        return text
+    return number if math.isfinite(number) else text
+
+
 def legacy_value(legacy, field):
     value = legacy.get(field, "")
     return value.zfill(8) if field in LEGACY_DATE_FIELDS and value.isdigit() else value
@@ -222,6 +249,11 @@ GLOSA_COLUMNS = {
 
 
 def _column_value(row, key, catalogos):
+    value = _text_column_value(row, key, catalogos)
+    return to_number(value) if key in AMOUNT_COLUMNS else value
+
+
+def _text_column_value(row, key, catalogos):
     legacy = row.payload_json.get("legacy_fields", {})
     if key == "importador_probable":
         return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else legacy.get("IMPORT", "")

@@ -143,3 +143,28 @@ class ColumnasMdbAntiguasTests(TestCase):
         with patch("reportes.tasks.generar_informe.delay"), override_settings(ALLOWED_HOSTS=["testserver"]):
             self.client.post("/api/reportes/importaciones/exportar/", data=json.dumps(body), content_type="application/json")
         self.assertEqual(InformeExcel.objects.get().parametros_json["columnas"], ["importador_rut", f"raw:{DIN_LABELS.index('PA_ORIG')}"])
+
+
+class MontosNumericosTests(TestCase):
+    def test_amounts_are_numbers_for_din_txt_and_mdb_while_codes_and_dates_stay_text(self):
+        from types import SimpleNamespace
+
+        from reportes.views import _column_value
+
+        idx = DIN_LABELS.index
+        txt = SimpleNamespace(
+            payload_json={"raw_columns": [""] * len(DIN_LABELS)}, valor_fob="22026,91", importador_probable_sugerido=None,
+        )
+        txt.payload_json["raw_columns"][idx("CIF")] = "24330"
+        txt.payload_json["raw_columns"][idx("PRE-UNIT")] = "3,25"
+        txt.payload_json["raw_columns"][idx("ARANC-NAC")] = "08061099"
+        txt.payload_json["raw_columns"][idx("FECACEP")] = "08012025"
+        mdb = SimpleNamespace(payload_json={"legacy_fields": {"CIF_TOTAL": "42143.42", "COD_AAR": "08045000", "MON_COT1": ""}}, importador_probable_sugerido=None)
+        self.assertEqual(_column_value(txt, "valor_fob", {}), 22026.91)
+        self.assertEqual(_column_value(txt, f"raw:{idx('CIF')}", {}), 24330)
+        self.assertEqual(_column_value(txt, f"raw:{idx('PRE-UNIT')}", {}), 3.25)
+        self.assertEqual(_column_value(txt, f"raw:{idx('ARANC-NAC')}", {}), "08061099")
+        self.assertEqual(_column_value(txt, f"raw:{idx('FECACEP')}", {}), "08012025")
+        self.assertEqual(_column_value(mdb, f"raw:{idx('CIF')}", {}), 42143.42)
+        self.assertEqual(_column_value(mdb, f"raw:{idx('ARANC-NAC')}", {}), "08045000")
+        self.assertEqual(_column_value(mdb, f"raw:{idx('VAL1')}", {}), "")

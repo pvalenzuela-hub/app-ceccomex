@@ -57,7 +57,7 @@ class LegacyMDBMappingTests(SimpleTestCase):
     def test_legacy_report_uses_named_fields_without_fabricating_txt_positions(self):
         data = map_importacion(example_row(), 1)
         row = SimpleNamespace(**data, importador_probable_sugerido=None)
-        self.assertEqual(_column_value(row, "valor_fob", {}), "250.75")
+        self.assertEqual(_column_value(row, "valor_fob", {}), 250.75)
         # MDB fields fill their DIN-format column; dates regain the leading zero of DDMMYYYY.
         self.assertEqual(_column_value(row, f"raw:{DIN_LABELS.index('FECACEP')}", {}), "02012015")
         self.assertEqual(_column_value(row, f"raw:{DIN_LABELS.index('NUMENCRIPTADO')}", {}), "12345")
