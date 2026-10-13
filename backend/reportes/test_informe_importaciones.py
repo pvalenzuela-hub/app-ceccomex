@@ -124,3 +124,22 @@ class ProductoSinTildesTests(TestCase):
         payload = {"legacy_fields": {"MERCADERIA": "NEUMATICOS RADIALES"}}
         Importacion.objects.create(archivo_origen=source, periodo_anio=2015, periodo_mes=1, numero_ident="1", payload_json=payload, texto_producto=texto_producto_importacion(payload))
         self.assertEqual(_filtered_importaciones({"productos": ["neumáticos"]}, 2015, 1).count(), 1)
+
+
+class ColumnasMdbAntiguasTests(TestCase):
+    def test_old_mdb_keys_map_to_din_format_columns_without_duplicates(self):
+        from reportes.models import InformeExcel
+        from reportes.views import IMPORT_COLUMN_MAP, LEGACY_COLUMN_ALIASES
+
+        self.assertFalse([key for key in IMPORT_COLUMN_MAP if key.startswith("mdb:")])
+        self.assertEqual(LEGACY_COLUMN_ALIASES["mdb:PAI_ORI"], f"raw:{DIN_LABELS.index('PA_ORIG')}")
+        self.assertEqual(LEGACY_COLUMN_ALIASES["mdb:RUT"], "importador_rut")
+        from django.contrib.auth import get_user_model
+        from unittest.mock import patch
+        import json
+
+        self.client.force_login(get_user_model().objects.create_user("u", password="x"))
+        body = {"columnas": ["mdb:RUT", "importador_rut", "mdb:PAI_ORI"], "periodo_anio": 2015, "periodo_mes": 1}
+        with patch("reportes.tasks.generar_informe.delay"), override_settings(ALLOWED_HOSTS=["testserver"]):
+            self.client.post("/api/reportes/importaciones/exportar/", data=json.dumps(body), content_type="application/json")
+        self.assertEqual(InformeExcel.objects.get().parametros_json["columnas"], ["importador_rut", f"raw:{DIN_LABELS.index('PA_ORIG')}"])

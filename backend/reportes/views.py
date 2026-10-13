@@ -74,27 +74,66 @@ DIN_LABELS = (
 )
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
-IMPORT_COLUMNS.extend((f"mdb:{name}", f"MDB 2015 - {name}") for name in LEGACY_COLUMNS)
+# MDB 2015 data without a DIN TXT position (the DIN only carries an anonymous NUM_UNICO_IMPORTADOR).
+LEGACY_ONLY_COLUMNS = {
+    "importador_nombre_declarado": ("IMPORT", "Nombre importador declarado (solo 2015)"),
+    "importador_rut": ("RUT", "RUT importador (solo 2015)"),
+    "importador_dv": ("DV", "DV importador (solo 2015)"),
+    "zona_economica": ("ZON_ECO", "Zona económica (solo 2015)"),
+    "clave_economica": ("CLA_ECO", "Clave económica (solo 2015)"),
+    "precio_unitario_cif": ("PRE_UCIF", "Precio unitario CIF (solo 2015)"),
+}
+IMPORT_COLUMNS.extend((key, label) for key, (_, label) in LEGACY_ONLY_COLUMNS.items())
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DEFAULT_COLUMNS = ["numero_ident", "importador_probable", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
 
-# Only map fields whose historical meaning matches the DIN TXT column.
+# DIN TXT label -> MDB 2015 field with the same meaning (checked against the DIN glosas and the 2015 values),
+# so 2015 rows fill the same DIN-format columns as the TXT months.
 LEGACY_DIN_NAMES = {
-    "TIPO_DOCTO": "TIP_OPER", "ADU": "COD_ADU", "PA_ORIG": "PAI_ORI",
-    "PA_ADQ": "PAI_ADQ", "VIA_TRAN": "VIA", "PTO_EMB": "PTO_EMB",
-    "PTO_DESEM": "PTO_DES", "TPO_CARGA": "TIP_CAR", "REG_IMP": "REG_IMP",
-    "MONEDA": "COD_MON", "CL_COMPRA": "COD_CLCOM", "FOB": "VAL_FOB",
-    "COD_FLE": "COD_FLETE", "FLETE": "VAL_FLETE", "TOT_BULTOS": "TOT_BUL",
-    "COD_SEG": "COD_SEG", "SEGURO": "MON_SEG", "TOT_PESO": "TOT_PESO",
-    "CIF": "CIF_TOTAL", "NUMITEM": "NUM_ITEM", "DNOMBRE": "MERCADERIA",
-    "CANT-MERC": "CANT_MERC", "MEDIDA": "COD_UMED", "PRE-UNIT": "PRE_UFOB",
-    "ARANC-NAC": "COD_AAR", "CIF-ITEM": "CIF_ITEM",
+    "NUMENCRIPTADO": "NUM_IDEN", "TIPO_DOCTO": "TIP_OPER", "ADU": "COD_ADU",
+    "NUM_RS": "NUM_REGS", "FEC_RS": "FEC_REGS", "ADUA_RS": "ADU_REGS",
+    "PA_ORIG": "PAI_ORI", "PA_ADQ": "PAI_ADQ", "VIA_TRAN": "VIA", "PTO_EMB": "PTO_EMB", "PTO_DESEM": "PTO_DES",
+    "TPO_CARGA": "TIP_CAR", "ALMACEN": "COD_ALM", "FEC_ALMAC": "FEC_ALM", "FECRETIRO": "FEC_RM",
+    "NU_REGR": "NUM_REGI", "ANO_REG": "ANO_REGI", "CODVISBUEN": "REG_VB", "PAGO_GRAV": "FPA_GRA",
+    "FECACEP": "FEC_ACE", "GNOM_CIA_T": "NOM_CIA", "CODPAISCIA": "COD_PCIA", "NUMRUTCIA": "RUT_CIA",
+    "DIGVERCIA": "DV_CIA", "NUM_MANIF": "NUM_MA", "NUM_MANIF1": "NUM_MA1", "NUM_MANIF2": "NUM_MA2",
+    "FEC_MANIF": "FEC_MAN", "NUM_CONOC": "NUM_DOCT", "FEC_CONOC": "FEC_DOCT", "REG_IMP": "REG_IMP",
+    "BCO_COM": "BCO_COM", "FORM_PAGO": "FPA_COB", "MONEDA": "COD_MON", "CL_COMPRA": "COD_CLCOM",
+    "TOT_ITEMS": "NUM_ITEMT", "FOB": "VAL_FOB", "COD_FLE": "COD_FLETE", "FLETE": "VAL_FLETE",
+    "TOT_BULTOS": "TOT_BUL", "COD_SEG": "COD_SEG", "SEGURO": "MON_SEG", "TOT_PESO": "TOT_PESO",
+    "CIF": "CIF_TOTAL", "NUM_AUT": "NUM_IIMP", "FEC_AUT": "FEC_IIMP", "ID_BULTOS": "IDE_BULTOS",
+    "CTA_OTRO": "COD_CADV", "MON_OTRO": "MON_CADV", "MON_178": "MON_CIVA", "MON_191": "MON_GIRO",
+    "MON_699": "MON_DIFE", "MON_199": "MON_CCON",
+    "NUMITEM": "NUM_ITEM", "DNOMBRE": "MERCADERIA", "DMARCA": "ATRI1", "DVARIEDAD": "ATRI2",
+    "DOTRO1": "ATRI3", "DOTRO2": "ATRI4", "ATR-5": "ATRI5", "ATR-6": "ATRI6",
+    "SAJU-ITEM": "SIG_AJU", "AJU-ITEM": "MON_AJU", "CANT-MERC": "CANT_MERC", "MERMAS": "MERMAS",
+    "MEDIDA": "COD_UMED", "PRE-UNIT": "PRE_UFOB", "ARANC-ALA": "COD_ARAT", "NUMCOR": "NUM_CARA",
+    "NUMACU": "NUM_ACOM", "ARANC-NAC": "COD_AAR", "CIF-ITEM": "CIF_ITEM",
+    "ADVAL-ALA": "POR_ADV", "ADVAL": "COD_CADVI", "VALAD": "MON_CADVI",
 }
 LEGACY_DIN_NAMES.update({f"TPO_BUL{i}": f"TIP_BUL{i}" for i in range(1, 9)})
+LEGACY_DIN_NAMES.update({f"CANT_BUL{i}": f"CAN_BUL{i}" for i in range(1, 9)})
+LEGACY_DIN_NAMES.update({f"CTA_OTR{i}": f"COD_CO{i}" for i in range(1, 8)})
+LEGACY_DIN_NAMES.update({f"MON_OTR{i}": f"MON_CO{i}" for i in range(1, 8)})
+LEGACY_DIN_NAMES.update({f"CODOBS{i}": f"COD_OB{i}" for i in range(1, 5)})
+LEGACY_DIN_NAMES.update({f"DESOBS{i}": f"DES_OB{i}" for i in range(1, 5)})
+for _i in range(1, 5):
+    LEGACY_DIN_NAMES.update({f"OTRO{_i}": f"POR_CO{_i}", f"CTA{_i}": f"COD_COT{_i}", f"SIGVAL{_i}": f"SIG_CO{_i}", f"VAL{_i}": f"MON_COT{_i}"})
 LEGACY_DIN_BY_INDEX = {
     index: LEGACY_DIN_NAMES[name] for index, name in enumerate(DIN_LABELS)
     if name in LEGACY_DIN_NAMES
 }
+# Access dropped the leading zero of DDMMYYYY dates (5012015); the DIN TXT keeps 8 digits.
+LEGACY_DATE_FIELDS = {"FEC_REGS", "FEC_ALM", "FEC_RM", "FEC_ACE", "FEC_MAN", "FEC_DOCT", "FEC_IIMP"}
+# Saved report configurations created when the MDB fields were listed separately.
+LEGACY_COLUMN_ALIASES = {f"mdb:{field}": key for key, (field, _) in LEGACY_ONLY_COLUMNS.items()}
+LEGACY_COLUMN_ALIASES.update({f"mdb:{field}": f"raw:{index}" for index, field in LEGACY_DIN_BY_INDEX.items()})
+LEGACY_COLUMN_ALIASES.update({"mdb:FOB_ITEM": "valor_fob", "mdb:FLE_ITEM": "valor_flete", "mdb:SEG_ITEM": "valor_seguro"})
+
+
+def legacy_value(legacy, field):
+    value = legacy.get(field, "")
+    return value.zfill(8) if field in LEGACY_DATE_FIELDS and value.isdigit() else value
 
 
 def _selected_values(value):
@@ -186,12 +225,12 @@ def _column_value(row, key, catalogos):
     legacy = row.payload_json.get("legacy_fields", {})
     if key == "importador_probable":
         return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else legacy.get("IMPORT", "")
-    if key.startswith("mdb:"):
-        return legacy.get(key.split(":", 1)[1], "")
+    if key in LEGACY_ONLY_COLUMNS:
+        return legacy.get(LEGACY_ONLY_COLUMNS[key][0], "")
     raw = row.payload_json.get("raw_columns", [])
     def raw_value(index):
         if legacy:
-            return legacy.get(LEGACY_DIN_BY_INDEX.get(index), "")
+            return legacy_value(legacy, LEGACY_DIN_BY_INDEX[index]) if index in LEGACY_DIN_BY_INDEX else ""
         return raw[index] if index < len(raw) else ""
 
     if key in GLOSA_COLUMNS:
@@ -335,7 +374,8 @@ def _informe_json(informe):
 
 def solicitar_informe(request, tipo, column_map, default_columns, prefijo):
     """Validate a report request, store it as InformeExcel and queue it for the Celery worker."""
-    columns = [key for key in request.data.get("columnas", default_columns) if key in column_map]
+    requested = [LEGACY_COLUMN_ALIASES.get(key, key) for key in request.data.get("columnas", default_columns)]
+    columns = list(dict.fromkeys(key for key in requested if key in column_map))
     if not columns:
         return Response({"detail": "Seleccione al menos una columna."}, status=status.HTTP_400_BAD_REQUEST)
     # A single month (periodo_anio/periodo_mes) is still accepted as a one-month range.

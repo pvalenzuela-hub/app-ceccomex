@@ -11,7 +11,7 @@ from comercio.management.commands.import_legacy_mdb import Command, read_month
 from comercio.models import ArchivoCarga, Importacion
 from reportes.management.commands.sync_importadores_mdb_2015 import valid_rut
 from reportes.models import ImportadorProbable
-from reportes.views import _column_value, _filtered_importaciones
+from reportes.views import DIN_LABELS, _column_value, _filtered_importaciones
 
 
 def example_row(**overrides):
@@ -57,7 +57,11 @@ class LegacyMDBMappingTests(SimpleTestCase):
     def test_legacy_report_uses_named_fields_without_fabricating_txt_positions(self):
         data = map_importacion(example_row(), 1)
         row = SimpleNamespace(**data, importador_probable_sugerido=None)
-        self.assertEqual(_column_value(row, "mdb:FOB_ITEM", {}), "250.75")
+        self.assertEqual(_column_value(row, "valor_fob", {}), "250.75")
+        # MDB fields fill their DIN-format column; dates regain the leading zero of DDMMYYYY.
+        self.assertEqual(_column_value(row, f"raw:{DIN_LABELS.index('FECACEP')}", {}), "02012015")
+        self.assertEqual(_column_value(row, f"raw:{DIN_LABELS.index('NUMENCRIPTADO')}", {}), "12345")
+        self.assertEqual(_column_value(row, "importador_rut", {}), "12345678")
         self.assertEqual(_column_value(row, "raw:54", {}), "1")
         self.assertEqual(_column_value(row, "raw:157", {}), "08045000")
         self.assertEqual(_column_value(row, "raw:6", {}), "")
