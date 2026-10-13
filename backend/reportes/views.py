@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.busqueda import normalizar
+from comercio.descripcion import campos_descripcion
 from comercio.legacy_mdb import LEGACY_COLUMNS
 from comercio.models import Importacion
 from reportes.models import ImportadorProbable, InformeExcel, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
@@ -40,12 +41,13 @@ IMPORT_COLUMNS = [
     ("tpo_bul5_glosa", "TPO_BUL5 - descripción"), ("tpo_bul6_glosa", "TPO_BUL6 - descripción"),
     ("tpo_bul7_glosa", "TPO_BUL7 - descripción"), ("tpo_bul8_glosa", "TPO_BUL8 - descripción"),
     ("partida_arancelaria_codigo", "Arancel nacional"), ("glosa_mercancia", "Mercancía"),
-    ("valor_fob", "Valor FOB"), ("valor_flete", "Valor flete"), ("valor_seguro", "Valor seguro"),
-    ("valor_cif", "Valor CIF"), ("raw:54", "REG_IMP - Régimen de importación"),
+    ("valor_fob", "FOB-Item"), ("valor_flete", "Flete-Item"), ("valor_seguro", "Seguro-Item"),
+    ("raw:54", "REG_IMP - Régimen de importación"),
     ("raw:61", "VALEXFAB - Valor Ex-Fábrica"), ("raw:63", "MONGASFOB - Gastos hasta FOB"),
     ("raw:73", "TOT_PESO - Total peso"), ("raw:146", "CANT_MERC - Cantidad de mercancías"),
     ("raw:148", "MEDIDA - Unidad de medida"), ("raw:149", "PRE_UNIT - Precio unitario FOB"),
-    ("raw:158", "CIF_ITEM - Valor CIF del ítem"), ("raw:160", "ADVAL - Porcentaje advalorem"),
+    ("cantidad_observada", "Cantidad observada"), ("unidad_observada", "Unidad de medida observada"),
+    ("raw:158", "CIF Item"), ("raw:160", "ADVAL - Porcentaje advalorem"),
     ("raw:162", "OTRO1"), ("raw:166", "OTRO2"), ("raw:170", "OTRO3"), ("raw:174", "OTRO4"),
 ]
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
@@ -74,8 +76,16 @@ DIN_LABELS = (
     "SIGVAL1", "VAL1", "OTRO2", "CTA2", "SIGVAL2", "VAL2", "OTRO3", "CTA3",
     "SIGVAL3", "VAL3", "OTRO4", "CTA4", "SIGVAL4", "VAL4",
 )
+DIN_POSITIONS = {label: index for index, label in enumerate(DIN_LABELS)}
+DIN_COLUMN_LABELS = {
+    DIN_LABELS.index("FOB"): "FOB Total", DIN_LABELS.index("FLETE"): "Flete Total",
+    DIN_LABELS.index("SEGURO"): "Seguro Total", DIN_LABELS.index("CIF"): "CIF Total",
+    DIN_LABELS.index("DNOMBRE"): "DNOMBRE - Mercadería", DIN_LABELS.index("DMARCA"): "DMARCA - Marca",
+}
 # Expose every official DIN position while preserving friendly materialized columns above.
-IMPORT_COLUMNS.extend((f"raw:{index}", DIN_LABELS[index]) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP)
+IMPORT_COLUMNS.extend(
+    (f"raw:{index}", DIN_COLUMN_LABELS.get(index, DIN_LABELS[index])) for index in range(178) if f"raw:{index}" not in IMPORT_COLUMN_MAP
+)
 # MDB 2015 data without a DIN TXT position (the DIN only carries an anonymous NUM_UNICO_IMPORTADOR).
 LEGACY_ONLY_COLUMNS = {
     "importador_nombre_declarado": ("IMPORT", "Nombre importador declarado (solo 2015)"),
@@ -83,11 +93,17 @@ LEGACY_ONLY_COLUMNS = {
     "importador_dv": ("DV", "DV importador (solo 2015)"),
     "zona_economica": ("ZON_ECO", "Zona económica (solo 2015)"),
     "clave_economica": ("CLA_ECO", "Clave económica (solo 2015)"),
-    "precio_unitario_cif": ("PRE_UCIF", "Precio unitario CIF (solo 2015)"),
+}
+# Item values the DIN TXT does not carry, prorated by the item's share of the CIF
+# (doc-req/FORMULA ULTIMOS 4 CAMPOS IMPORTACIONES.xlsx); MDB 2015 has them per item.
+ITEM_COLUMNS = {
+    "valor_fob": ("FOB", "FOB_ITEM"), "valor_flete": ("FLETE", "FLE_ITEM"), "valor_seguro": ("SEGURO", "SEG_ITEM"),
+    "precio_unitario_cif": (None, "PRE_UCIF"),
 }
 IMPORT_COLUMNS.extend((key, label) for key, (_, label) in LEGACY_ONLY_COLUMNS.items())
+IMPORT_COLUMNS.append(("precio_unitario_cif", "Precio unitario CIF"))
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DEFAULT_COLUMNS = ["numero_ident", "importador_probable", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
+DEFAULT_COLUMNS = ["numero_ident", "importador_probable", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "raw:158", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
 
 # DIN TXT label -> MDB 2015 field with the same meaning (checked against the DIN glosas and the 2015 values),
 # so 2015 rows fill the same DIN-format columns as the TXT months.
@@ -129,6 +145,9 @@ LEGACY_DIN_BY_INDEX = {
 LEGACY_DATE_FIELDS = {"FEC_REGS", "FEC_ALM", "FEC_RM", "FEC_ACE", "FEC_MAN", "FEC_DOCT", "FEC_IIMP"}
 # Saved report configurations created when the MDB fields were listed separately.
 LEGACY_COLUMN_ALIASES = {f"mdb:{field}": key for key, (field, _) in LEGACY_ONLY_COLUMNS.items()}
+LEGACY_COLUMN_ALIASES["mdb:PRE_UCIF"] = "precio_unitario_cif"
+# "Valor CIF" was the DIN total for TXT months and the item CIF for 2015; both are now separate columns.
+LEGACY_COLUMN_ALIASES["valor_cif"] = "raw:158"
 LEGACY_COLUMN_ALIASES.update({f"mdb:{field}": f"raw:{index}" for index, field in LEGACY_DIN_BY_INDEX.items()})
 LEGACY_COLUMN_ALIASES.update({"mdb:FOB_ITEM": "valor_fob", "mdb:FLE_ITEM": "valor_flete", "mdb:SEG_ITEM": "valor_seguro"})
 
@@ -143,7 +162,10 @@ AMOUNT_DIN_LABELS = {
     *[f"VAL_60{i}" for i in range(1, 8)], *[f"OTRO{i}" for i in range(1, 5)], *[f"VAL{i}" for i in range(1, 5)],
 }
 AMOUNT_COLUMNS = {f"raw:{index}" for index, label in enumerate(DIN_LABELS) if label in AMOUNT_DIN_LABELS}
-AMOUNT_COLUMNS |= {"valor_fob", "valor_flete", "valor_seguro", "valor_cif", "precio_unitario_cif"}
+AMOUNT_COLUMNS |= {"valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif", "cantidad_observada"}
+DESCRIPCION_START = DIN_LABELS.index("DNOMBRE")
+DESCRIPCION_COLUMNS = {f"raw:{DESCRIPCION_START + offset}": offset for offset in range(7)}
+DESCRIPCION_COLUMNS["glosa_mercancia"] = 0
 
 
 def to_number(value):
@@ -253,12 +275,46 @@ def _column_value(row, key, catalogos):
     return to_number(value) if key in AMOUNT_COLUMNS else value
 
 
+def _derivados(row):
+    if not hasattr(row, "_derivados"):
+        row._derivados = campos_descripcion(row.payload_json)
+    return row._derivados
+
+
+def _item_value(row, key):
+    total, legacy_field = ITEM_COLUMNS[key]
+    legacy = row.payload_json.get("legacy_fields")
+    if legacy:
+        return legacy.get(legacy_field, "")
+    raw = row.payload_json.get("raw_columns", [])
+
+    def number(label):
+        index = DIN_POSITIONS[label]
+        value = to_number(raw[index] if index < len(raw) else "")
+        return value if isinstance(value, float) else None
+
+    cif_item = number("CIF-ITEM")
+    divisor = number("CANT-MERC") if total is None else number("CIF")
+    if cif_item is None or not divisor:
+        return ""
+    if total is None:
+        return round(cif_item / divisor, 6)
+    amount = number(total)
+    return "" if amount is None else round(cif_item / divisor * amount, 2)
+
+
 def _text_column_value(row, key, catalogos):
     legacy = row.payload_json.get("legacy_fields", {})
     if key == "importador_probable":
         return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else legacy.get("IMPORT", "")
     if key in LEGACY_ONLY_COLUMNS:
         return legacy.get(LEGACY_ONLY_COLUMNS[key][0], "")
+    if key in ITEM_COLUMNS:
+        return _item_value(row, key)
+    if key in DESCRIPCION_COLUMNS:
+        return _derivados(row)["descripcion"][DESCRIPCION_COLUMNS[key]]
+    if key in ("cantidad_observada", "unidad_observada"):
+        return _derivados(row)[key]
     raw = row.payload_json.get("raw_columns", [])
     def raw_value(index):
         if legacy:

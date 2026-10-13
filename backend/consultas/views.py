@@ -4,6 +4,7 @@ from django.http import HttpResponse
 from django.db.models import Q
 from openpyxl import Workbook
 
+from comercio.descripcion import campos_descripcion
 from comercio.models import Importacion
 from consultas.serializers import ImportacionConsultaSerializer
 from consultas.serializers import ConsultaGuardadaSerializer
@@ -158,7 +159,7 @@ def exportar_importaciones(request):
             pais.get("glosa", ""),
             item.partida_arancelaria_codigo,
             partida.get("glosa", ""),
-            item.glosa_mercancia,
+            campos_descripcion(item.payload_json)["descripcion"][0],
             to_number(item.valor_fob),
             to_number(item.valor_flete),
             to_number(item.valor_seguro),

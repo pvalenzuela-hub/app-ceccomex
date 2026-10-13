@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from comercio.descripcion import campos_descripcion
 from comercio.models import Importacion
 from consultas.models import ConsultaGuardada
 
@@ -9,6 +10,7 @@ class ImportacionConsultaSerializer(serializers.ModelSerializer):
     comuna_importador = serializers.SerializerMethodField()
     pais_origen = serializers.SerializerMethodField()
     partida = serializers.SerializerMethodField()
+    glosa_mercancia = serializers.SerializerMethodField()
 
     class Meta:
         model = Importacion
@@ -45,6 +47,9 @@ class ImportacionConsultaSerializer(serializers.ModelSerializer):
 
     def get_pais_origen(self, obj):
         return self.context.get("resolver")("paises", obj.pais_origen_codigo) if self.context.get("resolver") else {"codigo": obj.pais_origen_codigo, "glosa": "", "pendiente_revision": True}
+
+    def get_glosa_mercancia(self, obj):
+        return campos_descripcion(obj.payload_json)["descripcion"][0]
 
     def get_partida(self, obj):
         return self.context.get("resolver")("partidas", obj.partida_arancelaria_codigo) if self.context.get("resolver") else {"codigo": obj.partida_arancelaria_codigo, "glosa": "", "pendiente_revision": True}

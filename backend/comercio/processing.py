@@ -1,4 +1,5 @@
 from comercio.busqueda import texto_producto_importacion
+from comercio.descripcion import separar_descripcion
 from comercio.models import ArchivoCarga, ArchivoCargaStaging, Importacion
 
 
@@ -30,7 +31,7 @@ def parse_txt_line(tipo_archivo: str, line: str) -> dict:
         pais_origen_codigo = pick(21)
 
         partida_arancelaria = pick(157)
-        glosa_mercancia = pick(133)
+        glosa_mercancia = separar_descripcion(pick(133), parts[134:140])[0]
         valor_fob = pick(64)
         valor_flete = pick(67)
         valor_seguro = pick(70)

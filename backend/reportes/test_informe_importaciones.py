@@ -155,12 +155,13 @@ class MontosNumericosTests(TestCase):
         txt = SimpleNamespace(
             payload_json={"raw_columns": [""] * len(DIN_LABELS)}, valor_fob="22026,91", importador_probable_sugerido=None,
         )
+        txt.payload_json["raw_columns"][idx("FOB")] = "22026,91"
         txt.payload_json["raw_columns"][idx("CIF")] = "24330"
         txt.payload_json["raw_columns"][idx("PRE-UNIT")] = "3,25"
         txt.payload_json["raw_columns"][idx("ARANC-NAC")] = "08061099"
         txt.payload_json["raw_columns"][idx("FECACEP")] = "08012025"
         mdb = SimpleNamespace(payload_json={"legacy_fields": {"CIF_TOTAL": "42143.42", "COD_AAR": "08045000", "MON_COT1": ""}}, importador_probable_sugerido=None)
-        self.assertEqual(_column_value(txt, "valor_fob", {}), 22026.91)
+        self.assertEqual(_column_value(txt, f"raw:{idx('FOB')}", {}), 22026.91)
         self.assertEqual(_column_value(txt, f"raw:{idx('CIF')}", {}), 24330)
         self.assertEqual(_column_value(txt, f"raw:{idx('PRE-UNIT')}", {}), 3.25)
         self.assertEqual(_column_value(txt, f"raw:{idx('ARANC-NAC')}", {}), "08061099")
@@ -168,3 +169,40 @@ class MontosNumericosTests(TestCase):
         self.assertEqual(_column_value(mdb, f"raw:{idx('CIF')}", {}), 42143.42)
         self.assertEqual(_column_value(mdb, f"raw:{idx('ARANC-NAC')}", {}), "08045000")
         self.assertEqual(_column_value(mdb, f"raw:{idx('VAL1')}", {}), "")
+
+
+class DescripcionYValoresItemTests(TestCase):
+    def test_description_columns_observed_quantity_and_item_values(self):
+        from types import SimpleNamespace
+
+        from reportes.views import _column_value
+
+        idx = DIN_LABELS.index
+        raw = [""] * len(DIN_LABELS)
+        values = {"DNOMBRE": "SIN-CODIGO      ~ TENSIONADOR~ SIGNODE-F~ H151", "DMARCA": "620E~ HERRAMIENTA MANUAL",
+                  "DESOBS1": "MERCANCIA USADA", "DESOBS2": "00000081.000000 T.M", "FOB": "800", "FLETE": "150",
+                  "SEGURO": "50", "CIF": "1000", "CIF-ITEM": "250", "CANT-MERC": "10"}
+        for label, value in values.items():
+            raw[idx(label)] = value
+        txt = SimpleNamespace(payload_json={"raw_columns": raw}, glosa_mercancia=values["DNOMBRE"], importador_probable_sugerido=None)
+        mdb = SimpleNamespace(
+            payload_json={"legacy_fields": {"MERCADERIA": "MANGO", "ATRI1": "MACHU PICCHU-F", "FOB_ITEM": "250.75", "PRE_UCIF": "1.5", "DES_OB1": "00006000.000000 CAJAS"}},
+            importador_probable_sugerido=None,
+        )
+        value = lambda row, key: _column_value(row, key, {})
+        self.assertEqual([value(txt, key) for key in ("glosa_mercancia", f"raw:{idx('DMARCA')}", f"raw:{idx('DVARIEDAD')}", f"raw:{idx('DOTRO1')}")],
+                         ["TENSIONADOR", "SIGNODE", "H151620E", "HERRAMIENTA MANUAL SIN-CODIGO"])
+        self.assertEqual((value(txt, "cantidad_observada"), value(txt, "unidad_observada")), (81, "T.M"))
+        self.assertEqual([value(txt, key) for key in ("valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif")], [200, 37.5, 12.5, 25])
+        self.assertEqual(value(txt, f"raw:{idx('FOB')}"), 800)
+        self.assertEqual([value(mdb, key) for key in ("glosa_mercancia", f"raw:{idx('DMARCA')}", "valor_fob", "precio_unitario_cif", "cantidad_observada")],
+                         ["MANGO", "MACHU PICCHU", 250.75, 1.5, 6000])
+
+    def test_labels_and_old_cif_column(self):
+        from reportes.views import IMPORT_COLUMN_MAP, LEGACY_COLUMN_ALIASES
+
+        idx = DIN_LABELS.index
+        self.assertEqual([IMPORT_COLUMN_MAP[f"raw:{idx(label)}"] for label in ("FOB", "FLETE", "CIF", "CIF-ITEM")], ["FOB Total", "Flete Total", "CIF Total", "CIF Item"])
+        self.assertEqual([IMPORT_COLUMN_MAP[key] for key in ("valor_fob", "valor_flete", "valor_seguro")], ["FOB-Item", "Flete-Item", "Seguro-Item"])
+        self.assertNotIn("valor_cif", IMPORT_COLUMN_MAP)
+        self.assertEqual(LEGACY_COLUMN_ALIASES["valor_cif"], f"raw:{idx('CIF-ITEM')}")

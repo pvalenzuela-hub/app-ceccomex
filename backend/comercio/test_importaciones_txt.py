@@ -75,3 +75,35 @@ class TextoProductoTests(TestCase):
         self.assertEqual(texto_producto_importacion(din), "PANTALLA CON TODOS SUSNEUMATICOS")
         self.assertEqual(texto_producto_importacion({"legacy_fields": {"MERCADERIA": "MANGO", "ATRI1": "Ñandú"}}), "MANGONANDU")
         self.assertEqual(texto_producto_exportacion({"dus_fields": {"NOMBRE": "uvas", "ATRIBUTO1": "red globe"}}), "UVASRED GLOBE")
+
+
+class DescripcionTests(TestCase):
+    def test_splits_name_brand_and_attributes_and_moves_the_code_to_the_last_attribute(self):
+        from comercio.descripcion import separar_descripcion
+
+        cases = [
+            # Whole description as one "~" line across fields, cut mid-word.
+            (["SIN-CODIGO      ~CASACAS~SEYTEX-F~SINTETICOS~ MODE", "LOS Y COLORES VARIADOS~ PARA D", "AMA~ SON 29.5 DOCENAS~"],
+             ["CASACAS", "SEYTEX", "SINTETICOS", "MODELOS Y COLORES VARIADOS", "PARA DAMA", "SON 29.5 DOCENAS SIN-CODIGO", ""]),
+            # One attribute per field.
+            (["5590007522      ~DISCO DE SUSPENSION", "E.R.D.-F", "DE METAL COMUN", "PARASISTEMA DE TRANSMISION"],
+             ["DISCO DE SUSPENSION", "E.R.D.", "DE METAL COMUN", "PARASISTEMA DE TRANSMISION 5590007522", "", "", ""]),
+            # "-F" cut between DMARCA and DVARIEDAD.
+            (["SIN-CODIGO      ~FILM", "SRF INDUSTRIES (THAILAND) LTD-", "FDE POLIPROPILENO", "EN ROLLOS"],
+             ["FILM", "SRF INDUSTRIES (THAILAND) LTD", "DE POLIPROPILENO", "EN ROLLOS SIN-CODIGO", "", "", ""]),
+            # Brand without "-F" and the "~" line starting in DMARCA.
+            (["SIN-CODIGO      ~PISTOLA", "MARCA WALTHER", "DE AIRE"], ["PISTOLA", "MARCA WALTHER", "DE AIRE", "SIN-CODIGO", "", "", ""]),
+            (["SIN_CODIGO      ~ ANILLO SELLADOR", "MERCEDES-F~ DE CAUCHO VULCANIZ", "ADO~ PARA VEHICULO"],
+             ["ANILLO SELLADOR", "MERCEDES", "DE CAUCHO VULCANIZADO", "PARA VEHICULO SIN_CODIGO", "", "", ""]),
+            # MDB 2015: no product code.
+            (["MANGO", "MACHU PICCHU-F", "FRESCO"], ["MANGO", "MACHU PICCHU", "FRESCO", "", "", "", ""]),
+        ]
+        for fields, expected in cases:
+            self.assertEqual(separar_descripcion(fields[0], fields[1:]), expected)
+
+    def test_observed_quantity_and_unit_from_the_first_observation_that_has_them(self):
+        from comercio.descripcion import cantidad_observada
+
+        self.assertEqual(cantidad_observada(["00000081.000000 T.M", "", "", ""]), (81.0, "T.M"))
+        self.assertEqual(cantidad_observada(["SE SOLIC.REGIMEN PREF.", "001 CANCELA", "00053773.000000 KILOS", ""]), (53773.0, "KILOS"))
+        self.assertEqual(cantidad_observada(["1300000008419202502", "", "", ""]), ("", ""))
