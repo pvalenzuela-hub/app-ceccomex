@@ -18,15 +18,29 @@ from reportes.models import ImportadorProbable, InformeExcel, PerfilImportador, 
 from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialDetalleSerializer, ReporteSectorialSerializer, RubroImportacionSerializer
 
 
-# Indexed fields retain the official DIN position as stored in payload_json.raw_columns.
+# Indexed fields retain the official DIN position as stored in payload_json.raw_columns
+# (doc-req/import/descripcion-y-estructura-de-datos-din.xlsx, zero-based). The default columns come
+# first, in the order the report shows them.
+IMPORT_DEFAULT_COLUMNS = [
+    ("aduana_glosa", "Aduana"), ("raw:39", "Fecha (FECACEP)"), ("periodo_mes", "Mes"), ("importador_rut", "RUT"),
+    ("importador_probable", "Probable Importador"), ("pais_origen_glosa", "País de Origen"),
+    ("pa_adq_glosa", "País de Adquisición"), ("pto_emb_glosa", "Puerto de Embarque"), ("via_transporte_glosa", "Vía"),
+    ("form_pago_glosa", "Forma de Pago"), ("raw:159", "% Derechos (ADVAL-ALA)"), ("raw:161", "Derechos Pagados (VALAD)"),
+    ("iva_item", "I.V.A."), ("raw:64", "FOB Total"), ("raw:67", "Flete Total"), ("raw:70", "Seguro Total"),
+    ("raw:72", "CIF Total"), ("medida_glosa", "Unidad Medida"), ("raw:142", "Cantidad (CANT-MERC)"),
+    ("raw:158", "CIF Item"), ("partida_arancelaria_codigo", "Arancel"), ("partida_glosa", "Descripción Partida Arancelaria"),
+    # Product description fields, named apart from the OTRO1..OTRO4 tax groups.
+    ("raw:133", "MERCADERIA (DNOMBRE)"), ("raw:134", "MARCA (DMARCA)"), ("raw:135", "VARIEDAD (DVARIEDAD)"),
+    ("raw:136", "OTROS1 (DOTRO1)"), ("raw:137", "OTROS2 (DOTRO2)"), ("raw:138", "OTROS3 (ATR-5)"), ("raw:139", "OTROS4 (ATR-6)"),
+]
 IMPORT_COLUMNS = [
-    ("numero_ident", "Nº identificador"), ("importador_probable", "Importador probable sugerido"), ("item", "Ítem"), ("fecha_text", "Fecha"),
-    ("aduana_codigo", "Código aduana"), ("aduana_glosa", "Aduana - descripción"),
+    *IMPORT_DEFAULT_COLUMNS,
+    ("numero_ident", "Nº identificador"), ("item", "Ítem"), ("fecha_text", "Fecha (archivo)"), ("periodo_anio", "Año"),
+    ("aduana_codigo", "Código aduana"),
     ("comuna_importador_codigo", "Comuna importador"), ("comuna_importador_glosa", "Comuna importador - descripción"),
-    ("pais_origen_codigo", "País de origen"), ("pais_origen_glosa", "País de origen - descripción"),
-    ("via_transporte_codigo", "Vía de transporte"),
-    ("pa_orig_glosa", "PA_ORIG - descripción"), ("pa_adq_glosa", "PA_ADQ - descripción"),
-    ("via_transporte_glosa", "VIA_TRAN - descripción"), ("pto_emb_glosa", "PTO_EMB - descripción"),
+    ("pais_origen_codigo", "País de origen - código"),
+    ("via_transporte_codigo", "Vía de transporte - código"),
+    ("pa_orig_glosa", "PA_ORIG - descripción"),
     ("pto_desem_glosa", "PTO_DESEM - descripción"), ("reg_imp_glosa", "REG_IMP - descripción"),
     ("tipo_docto_glosa", "TIPO_DOCTO - descripción"), ("aductrol_glosa", "ADUCTROL - descripción"),
     ("adua_rs_glosa", "ADUA_RS - descripción"), ("codpaiscon_glosa", "CODPAISCON - descripción"),
@@ -34,20 +48,18 @@ IMPORT_COLUMNS = [
     ("codvisbuen_glosa", "CODVISBUEN - descripción"), ("codultvb_glosa", "CODULTVB - descripción"),
     ("pago_grav_glosa", "PAGO_GRAV - descripción"), ("codpaiscia_glosa", "CODPAISCIA - descripción"),
     ("bco_com_glosa", "BCO_COM - descripción"), ("codordiv_glosa", "CODORDIV - descripción"),
-    ("form_pago_glosa", "FORM_PAGO - descripción"), ("moneda_glosa", "MONEDA - descripción"),
-    ("cl_compra_glosa", "CL_COMPRA - descripción"), ("medida_glosa", "MEDIDA - descripción"),
+    ("moneda_glosa", "MONEDA - descripción"), ("cl_compra_glosa", "CL_COMPRA - descripción"),
     ("tpo_bul1_glosa", "TPO_BUL1 - descripción"), ("tpo_bul2_glosa", "TPO_BUL2 - descripción"),
     ("tpo_bul3_glosa", "TPO_BUL3 - descripción"), ("tpo_bul4_glosa", "TPO_BUL4 - descripción"),
     ("tpo_bul5_glosa", "TPO_BUL5 - descripción"), ("tpo_bul6_glosa", "TPO_BUL6 - descripción"),
     ("tpo_bul7_glosa", "TPO_BUL7 - descripción"), ("tpo_bul8_glosa", "TPO_BUL8 - descripción"),
-    ("partida_arancelaria_codigo", "Arancel nacional"), ("glosa_mercancia", "Mercancía"),
     ("valor_fob", "FOB-Item"), ("valor_flete", "Flete-Item"), ("valor_seguro", "Seguro-Item"),
     ("raw:54", "REG_IMP - Régimen de importación"),
-    ("raw:61", "VALEXFAB - Valor Ex-Fábrica"), ("raw:63", "MONGASFOB - Gastos hasta FOB"),
-    ("raw:73", "TOT_PESO - Total peso"), ("raw:146", "CANT_MERC - Cantidad de mercancías"),
-    ("raw:148", "MEDIDA - Unidad de medida"), ("raw:149", "PRE_UNIT - Precio unitario FOB"),
+    ("raw:59", "VALEXFAB - Valor Ex-Fábrica"), ("raw:61", "MONGASFOB - Gastos hasta FOB"),
+    ("raw:71", "TOT_PESO - Total peso"), ("raw:144", "MEDIDA - Código unidad de medida"),
+    ("raw:145", "PRE_UNIT - Precio unitario FOB"),
     ("cantidad_observada", "Cantidad observada"), ("unidad_observada", "Unidad de medida observada"),
-    ("raw:158", "CIF Item"), ("raw:160", "ADVAL - Porcentaje advalorem"),
+    ("raw:160", "ADVAL - Código cuenta advalorem"),
     *((f"raw:{162 + (number - 1) * 4}", f"OTRO{number} - % impuesto/cargo {number}") for number in range(1, 5)),
 ]
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
@@ -78,13 +90,6 @@ DIN_LABELS = (
 )
 DIN_POSITIONS = {label: index for index, label in enumerate(DIN_LABELS)}
 DIN_COLUMN_LABELS = {
-    DIN_LABELS.index("FOB"): "FOB Total", DIN_LABELS.index("FLETE"): "Flete Total",
-    DIN_LABELS.index("SEGURO"): "Seguro Total", DIN_LABELS.index("CIF"): "CIF Total",
-    # Product description fields, named apart from the OTRO1..OTRO4 tax groups below.
-    **{DIN_LABELS.index(label): name for label, name in (
-        ("DNOMBRE", "MERCADERIA (DNOMBRE)"), ("DMARCA", "MARCA (DMARCA)"), ("DVARIEDAD", "VARIEDAD (DVARIEDAD)"),
-        ("DOTRO1", "OTROS1 (DOTRO1)"), ("DOTRO2", "OTROS2 (DOTRO2)"), ("ATR-5", "OTROS3 (ATR-5)"), ("ATR-6", "OTROS4 (ATR-6)"),
-    )},
     # Taxes or charges per item: percentage, account, sign and amount.
     **{DIN_LABELS.index(f"{field}{number}"): f"{field}{number} - {meaning} impuesto/cargo {number}"
        for number in range(1, 5) for field, meaning in (("CTA", "Cuenta"), ("SIGVAL", "Signo"), ("VAL", "Monto"))},
@@ -96,7 +101,6 @@ IMPORT_COLUMNS.extend(
 # MDB 2015 data without a DIN TXT position (the DIN only carries an anonymous NUM_UNICO_IMPORTADOR).
 LEGACY_ONLY_COLUMNS = {
     "importador_nombre_declarado": ("IMPORT", "Nombre importador declarado (solo 2015)"),
-    "importador_rut": ("RUT", "RUT importador (solo 2015)"),
     "importador_dv": ("DV", "DV importador (solo 2015)"),
     "zona_economica": ("ZON_ECO", "Zona económica (solo 2015)"),
     "clave_economica": ("CLA_ECO", "Clave económica (solo 2015)"),
@@ -110,7 +114,7 @@ ITEM_COLUMNS = {
 IMPORT_COLUMNS.extend((key, label) for key, (_, label) in LEGACY_ONLY_COLUMNS.items())
 IMPORT_COLUMNS.append(("precio_unitario_cif", "Precio unitario CIF"))
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
-DEFAULT_COLUMNS = ["numero_ident", "importador_probable", "item", "fecha_text", "aduana_codigo", "aduana_glosa", "comuna_importador_codigo", "comuna_importador_glosa", "pais_origen_codigo", "pais_origen_glosa", "partida_arancelaria_codigo", "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "raw:158", "raw:2", "raw:21", "pa_orig_glosa", "raw:22", "pa_adq_glosa", "raw:23", "via_transporte_glosa", "raw:25", "pto_emb_glosa", "raw:26", "pto_desem_glosa", "raw:54", "reg_imp_glosa", "raw:162", "raw:166", "raw:170", "raw:174"]
+DEFAULT_COLUMNS = [key for key, _ in IMPORT_DEFAULT_COLUMNS]
 
 # DIN TXT label -> MDB 2015 field with the same meaning (checked against the DIN glosas and the 2015 values),
 # so 2015 rows fill the same DIN-format columns as the TXT months.
@@ -153,6 +157,8 @@ LEGACY_DATE_FIELDS = {"FEC_REGS", "FEC_ALM", "FEC_RM", "FEC_ACE", "FEC_MAN", "FE
 # Saved report configurations created when the MDB fields were listed separately.
 LEGACY_COLUMN_ALIASES = {f"mdb:{field}": key for key, (field, _) in LEGACY_ONLY_COLUMNS.items()}
 LEGACY_COLUMN_ALIASES["mdb:PRE_UCIF"] = "precio_unitario_cif"
+LEGACY_COLUMN_ALIASES["mdb:RUT"] = "importador_rut"
+LEGACY_COLUMN_ALIASES["glosa_mercancia"] = "raw:133"  # "Mercancía" repeated MERCADERIA (DNOMBRE)
 # "Valor CIF" was the DIN total for TXT months and the item CIF for 2015; both are now separate columns.
 LEGACY_COLUMN_ALIASES["valor_cif"] = "raw:158"
 LEGACY_COLUMN_ALIASES.update({f"mdb:{field}": f"raw:{index}" for index, field in LEGACY_DIN_BY_INDEX.items()})
@@ -169,10 +175,10 @@ AMOUNT_DIN_LABELS = {
     *[f"VAL_60{i}" for i in range(1, 8)], *[f"OTRO{i}" for i in range(1, 5)], *[f"VAL{i}" for i in range(1, 5)],
 }
 AMOUNT_COLUMNS = {f"raw:{index}" for index, label in enumerate(DIN_LABELS) if label in AMOUNT_DIN_LABELS}
-AMOUNT_COLUMNS |= {"valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif", "cantidad_observada"}
+AMOUNT_COLUMNS |= {"valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif", "cantidad_observada", "iva_item"}
+IVA_CUENTA = "178"
 DESCRIPCION_START = DIN_LABELS.index("DNOMBRE")
 DESCRIPCION_COLUMNS = {f"raw:{DESCRIPCION_START + offset}": offset for offset in range(7)}
-DESCRIPCION_COLUMNS["glosa_mercancia"] = 0
 
 
 def to_number(value):
@@ -314,6 +320,9 @@ def _text_column_value(row, key, catalogos):
     legacy = row.payload_json.get("legacy_fields", {})
     if key == "importador_probable":
         return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else legacy.get("IMPORT", "")
+    if key == "importador_rut":
+        # The DIN TXT only carries the anonymous NUM_UNICO_IMPORTADOR in place of the RUT.
+        return legacy.get("RUT", "") if legacy else row.payload_json.get("raw_columns", [""] * 7)[6]
     if key in LEGACY_ONLY_COLUMNS:
         return legacy.get(LEGACY_ONLY_COLUMNS[key][0], "")
     if key in ITEM_COLUMNS:
@@ -332,6 +341,18 @@ def _text_column_value(row, key, catalogos):
         grupo, source = GLOSA_COLUMNS[key]
         codigo = raw_value(source) if isinstance(source, int) else getattr(row, source)
         return catalogos.get(grupo, {}).get(str(codigo), "")
+    if key == "partida_glosa":
+        return catalogos.get("partidas", {}).get(row.partida_arancelaria_codigo, "")
+    if key == "iva_item":
+        # IVA of the item: the OTRO1..OTRO4 tax group booked to account 178.
+        total = None
+        for number in range(1, 5):
+            if str(raw_value(DIN_POSITIONS[f"CTA{number}"])).strip().lstrip("0") == IVA_CUENTA:
+                amount = to_number(raw_value(DIN_POSITIONS[f"VAL{number}"]))
+                if isinstance(amount, float):
+                    sign = -1 if str(raw_value(DIN_POSITIONS[f"SIGVAL{number}"])).strip() == "-" else 1
+                    total = (total or 0) + sign * amount
+        return "" if total is None else round(total, 2)
     if key.startswith("raw:"):
         index = int(key.split(":", 1)[1])
         return raw_value(index)
@@ -457,6 +478,8 @@ def informe_importaciones_rows(parametros):
     desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
     qs = _filtered_importaciones(parametros.get("filtros", {}), desde=desde, hasta=hasta)
     catalogos = {grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa")) for grupo in IMPORT_CATALOG_GROUPS}
+    if "partida_glosa" in columns:
+        catalogos["partidas"] = dict(PartidaArancelaria.objects.values_list("codigo", "glosa"))
     return [IMPORT_COLUMN_MAP[key] for key in columns], qs, lambda row: [_column_value(row, key, catalogos) for key in columns]
 
 

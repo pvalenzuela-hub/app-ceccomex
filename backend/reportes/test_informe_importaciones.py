@@ -190,12 +190,12 @@ class DescripcionYValoresItemTests(TestCase):
             importador_probable_sugerido=None,
         )
         value = lambda row, key: _column_value(row, key, {})
-        self.assertEqual([value(txt, key) for key in ("glosa_mercancia", f"raw:{idx('DMARCA')}", f"raw:{idx('DVARIEDAD')}", f"raw:{idx('DOTRO1')}")],
+        self.assertEqual([value(txt, key) for key in (f"raw:{idx('DNOMBRE')}", f"raw:{idx('DMARCA')}", f"raw:{idx('DVARIEDAD')}", f"raw:{idx('DOTRO1')}")],
                          ["TENSIONADOR", "SIGNODE", "H151620E", "HERRAMIENTA MANUAL SIN-CODIGO"])
         self.assertEqual((value(txt, "cantidad_observada"), value(txt, "unidad_observada")), (81, "T.M"))
         self.assertEqual([value(txt, key) for key in ("valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif")], [200, 37.5, 12.5, 25])
         self.assertEqual(value(txt, f"raw:{idx('FOB')}"), 800)
-        self.assertEqual([value(mdb, key) for key in ("glosa_mercancia", f"raw:{idx('DMARCA')}", "valor_fob", "precio_unitario_cif", "cantidad_observada")],
+        self.assertEqual([value(mdb, key) for key in (f"raw:{idx('DNOMBRE')}", f"raw:{idx('DMARCA')}", "valor_fob", "precio_unitario_cif", "cantidad_observada")],
                          ["MANGO", "MACHU PICCHU", 250.75, 1.5, 6000])
 
     def test_labels_and_old_cif_column(self):
@@ -208,3 +208,31 @@ class DescripcionYValoresItemTests(TestCase):
         self.assertEqual([IMPORT_COLUMN_MAP[f"raw:{idx(label)}"] for label in ("DNOMBRE", "DOTRO1", "ATR-6", "OTRO1", "VAL4")],
                          ["MERCADERIA (DNOMBRE)", "OTROS1 (DOTRO1)", "OTROS4 (ATR-6)", "OTRO1 - % impuesto/cargo 1", "VAL4 - Monto impuesto/cargo 4"])
         self.assertEqual(LEGACY_COLUMN_ALIASES["valor_cif"], f"raw:{idx('CIF-ITEM')}")
+
+
+class ColumnasPorDefectoTests(TestCase):
+    def test_default_columns_order_positions_and_computed_values(self):
+        from types import SimpleNamespace
+
+        from catalogos.models import PartidaArancelaria
+        from reportes.views import DEFAULT_COLUMNS, IMPORT_COLUMN_MAP, IMPORT_COLUMNS, _column_value, informe_importaciones_rows
+
+        self.assertEqual([key for key, _ in IMPORT_COLUMNS[:len(DEFAULT_COLUMNS)]], DEFAULT_COLUMNS)
+        self.assertEqual(len(DEFAULT_COLUMNS), 29)
+        idx = DIN_LABELS.index
+        for label, name in (("CANT-MERC", "Cantidad (CANT-MERC)"), ("ADVAL-ALA", "% Derechos (ADVAL-ALA)"), ("VALAD", "Derechos Pagados (VALAD)"),
+                            ("FECACEP", "Fecha (FECACEP)"), ("VALEXFAB", "VALEXFAB - Valor Ex-Fábrica"), ("TOT_PESO", "TOT_PESO - Total peso")):
+            self.assertEqual(IMPORT_COLUMN_MAP[f"raw:{idx(label)}"], name)
+
+        raw = [""] * len(DIN_LABELS)
+        for label, value in {"NUM_UNICO_IMPORTADOR": "11198", "CTA1": "116", "VAL1": "5", "CTA2": "178", "SIGVAL2": "+", "VAL2": "639,16"}.items():
+            raw[idx(label)] = value
+        txt = SimpleNamespace(payload_json={"raw_columns": raw}, partida_arancelaria_codigo="48025510", importador_probable_sugerido=None)
+        mdb = SimpleNamespace(payload_json={"legacy_fields": {"RUT": "76123456", "COD_COT1": "178", "SIG_CO1": "+", "MON_COT1": "19.5"}}, importador_probable_sugerido=None)
+        catalogos = {"partidas": {"48025510": "PAPELES PARA ESCRITURA"}}
+        self.assertEqual([_column_value(txt, key, catalogos) for key in ("importador_rut", "iva_item", "partida_glosa")], ["11198", 639.16, "PAPELES PARA ESCRITURA"])
+        self.assertEqual([_column_value(mdb, key, {}) for key in ("importador_rut", "iva_item")], ["76123456", 19.5])
+
+        PartidaArancelaria.objects.create(codigo="48025510", glosa="PAPELES")
+        _, _, row_function = informe_importaciones_rows({"columnas": ["partida_glosa"], "periodo_desde": {"anio": 2026, "mes": 1}, "periodo_hasta": {"anio": 2026, "mes": 1}})
+        self.assertEqual(row_function(txt), ["PAPELES"])
