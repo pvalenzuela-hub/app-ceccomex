@@ -107,3 +107,18 @@ class DescripcionTests(TestCase):
         self.assertEqual(cantidad_observada(["00000081.000000 T.M", "", "", ""]), (81.0, "T.M"))
         self.assertEqual(cantidad_observada(["SE SOLIC.REGIMEN PREF.", "001 CANCELA", "00053773.000000 KILOS", ""]), (53773.0, "KILOS"))
         self.assertEqual(cantidad_observada(["1300000008419202502", "", "", ""]), ("", ""))
+
+    def test_brand_not_in_dmarca(self):
+        from comercio.descripcion import separar_descripcion
+
+        cases = [
+            # DMARCA continues the name; the brand is the next field (MDB 2015).
+            (["NEUMATICOS", "DE CAUCHO VULCANIZADO", "SAILUN", "ATREZZO"], ["NEUMATICOS DE CAUCHO VULCANIZADO", "SAILUN", "ATREZZO", "", "", "", ""]),
+            # A later field ending in "-F" is the brand.
+            (["MANGUERA", "DE CAUCHO VULCANIZADO", "GATES-F", "70695"], ["MANGUERA DE CAUCHO VULCANIZADO", "GATES", "70695", "", "", "", ""]),
+            (["MOTOR", "DIESEL", "BRIGGS-F"], ["MOTOR", "BRIGGS", "DIESEL", "", "", "", ""]),
+            # No brand when the next field is also a description.
+            (["HELICE", "DE PLASTICO", "PARTE DE MOTOR"], ["HELICE DE PLASTICO", "", "PARTE DE MOTOR", "", "", "", ""]),
+        ]
+        for fields, expected in cases:
+            self.assertEqual(separar_descripcion(fields[0], fields[1:]), expected)

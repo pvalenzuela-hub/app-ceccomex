@@ -19,6 +19,10 @@ DESOBS_MDB_FIELDS = ("DES_OB1", "DES_OB2", "DES_OB3", "DES_OB4")
 # Brand terminator: "-F" closing the text, a field, or followed by a separator ("SEYTEX-F~", "WELLA-F ").
 BRAND_END = re.compile(r"-F(?=$|[\s~.,;:/])")
 # "00000081.000000 T.M", "00053773.000000 KILOS"; short codes such as "001 CANCELA" are not quantities.
+# Words that start a description rather than a brand ("DE CAUCHO VULCANIZADO", "PARA USO MINERO").
+CONECTOR = re.compile(r"^(DE|DEL|PARA|CON|SIN|EN)\s")
+# Text that reads as a description, not a brand: connector words, digits or "LABEL:" ("PARTE DE MOTOR", "100% POLIESTER").
+DESCRIPTIVO = re.compile(r"(^|\s)(DE|DEL|PARA|CON|SIN|EN)\s|\d|:")
 CANTIDAD_UNIDAD = re.compile(r"^\s*(\d+\.\d+|\d{6,})\s+([^\d\s].*?)\s*$")
 
 
@@ -38,6 +42,29 @@ def _brand_end(line, starts):
 def _ancho(value, width):
     """A field one character short of its width lost a trailing space when Aduana trimmed it."""
     return value + " " if len(value) == width - 1 else value
+
+
+def _marca_sin_marcar(nombre, atributos):
+    """Name, brand and attributes when DMARCA does not end in "-F" and nothing is "~"-separated.
+
+    "NEUMATICOS | DE CAUCHO VULCANIZADO | SAILUN": DMARCA starting with DE, PARA... continues the name and
+    the brand is the next field; a later field ending in "-F" is the brand ("BARRAS | DE ACERO | IND.ARAMENDI-F").
+    Otherwise DMARCA stays as the brand.
+    """
+    campos = [_clean(value) for value in atributos]
+    marcado = next((index for index, value in enumerate(campos) if index and value.endswith("-F")), None)
+    if marcado is None and not CONECTOR.match(campos[0]):
+        return nombre, campos[0], campos[1:]
+    if CONECTOR.match(campos[0]):
+        nombre, campos = f"{_clean(nombre)} {campos[0]}", campos[1:]
+        marcado = None if marcado is None else marcado - 1
+    if marcado is not None:
+        marca = campos.pop(marcado)[:-2]
+    elif campos and campos[0] and not DESCRIPTIVO.search(campos[0]):
+        marca = campos.pop(0)
+    else:
+        marca = ""
+    return nombre, marca, campos
 
 
 def separar_descripcion(dnombre, atributos):
@@ -67,17 +94,21 @@ def separar_descripcion(dnombre, atributos):
         span = _brand_end(line, starts)
         # The brand may run into DVARIEDAD only when DMARCA was cut at its 30 characters.
         limite = len(atributos[0]) + (len(atributos[1]) if len(atributos[0]) >= 29 else 0)
-        if not span or span[0] >= limite:
-            span = (len(atributos[0]), len(atributos[0]))
-        marca, fin = line[:span[0]], span[1]
-        if "~" in line[fin:]:
-            otros = [value for value in (_clean(part) for part in line[fin:].split("~")) if value]
+        sin_marca = not span or span[0] >= limite
+        if sin_marca and "~" not in line:
+            nombre, marca, otros = _marca_sin_marcar(nombre, atributos)
         else:
-            otros, position = [], 0
-            for value in atributos:
-                otros.append(_clean(value[max(fin - position, 0):]) if position + len(value) > fin else "")
-                position += len(value)
-            otros = otros[1:]
+            if sin_marca:
+                span = (len(atributos[0]), len(atributos[0]))
+            marca, fin = line[:span[0]], span[1]
+            if "~" in line[fin:]:
+                otros = [value for value in (_clean(part) for part in line[fin:].split("~")) if value]
+            else:
+                otros, position = [], 0
+                for value in atributos:
+                    otros.append(_clean(value[max(fin - position, 0):]) if position + len(value) > fin else "")
+                    position += len(value)
+                otros = otros[1:]
     otros = (otros + [""] * 5)[:4] + [" ".join(value for value in otros[4:] if value)]
     codigo = codigo.strip()
     if codigo:
