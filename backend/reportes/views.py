@@ -48,7 +48,7 @@ IMPORT_COLUMNS = [
     ("raw:148", "MEDIDA - Unidad de medida"), ("raw:149", "PRE_UNIT - Precio unitario FOB"),
     ("cantidad_observada", "Cantidad observada"), ("unidad_observada", "Unidad de medida observada"),
     ("raw:158", "CIF Item"), ("raw:160", "ADVAL - Porcentaje advalorem"),
-    ("raw:162", "OTRO1"), ("raw:166", "OTRO2"), ("raw:170", "OTRO3"), ("raw:174", "OTRO4"),
+    *((f"raw:{162 + (number - 1) * 4}", f"OTRO{number} - % impuesto/cargo {number}") for number in range(1, 5)),
 ]
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DIN_LABELS = (
@@ -80,7 +80,14 @@ DIN_POSITIONS = {label: index for index, label in enumerate(DIN_LABELS)}
 DIN_COLUMN_LABELS = {
     DIN_LABELS.index("FOB"): "FOB Total", DIN_LABELS.index("FLETE"): "Flete Total",
     DIN_LABELS.index("SEGURO"): "Seguro Total", DIN_LABELS.index("CIF"): "CIF Total",
-    DIN_LABELS.index("DNOMBRE"): "DNOMBRE - Mercadería", DIN_LABELS.index("DMARCA"): "DMARCA - Marca",
+    # Product description fields, named apart from the OTRO1..OTRO4 tax groups below.
+    **{DIN_LABELS.index(label): name for label, name in (
+        ("DNOMBRE", "MERCADERIA (DNOMBRE)"), ("DMARCA", "MARCA (DMARCA)"), ("DVARIEDAD", "VARIEDAD (DVARIEDAD)"),
+        ("DOTRO1", "OTROS1 (DOTRO1)"), ("DOTRO2", "OTROS2 (DOTRO2)"), ("ATR-5", "OTROS3 (ATR-5)"), ("ATR-6", "OTROS4 (ATR-6)"),
+    )},
+    # Taxes or charges per item: percentage, account, sign and amount.
+    **{DIN_LABELS.index(f"{field}{number}"): f"{field}{number} - {meaning} impuesto/cargo {number}"
+       for number in range(1, 5) for field, meaning in (("CTA", "Cuenta"), ("SIGVAL", "Signo"), ("VAL", "Monto"))},
 }
 # Expose every official DIN position while preserving friendly materialized columns above.
 IMPORT_COLUMNS.extend(

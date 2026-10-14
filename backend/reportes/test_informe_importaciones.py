@@ -205,4 +205,6 @@ class DescripcionYValoresItemTests(TestCase):
         self.assertEqual([IMPORT_COLUMN_MAP[f"raw:{idx(label)}"] for label in ("FOB", "FLETE", "CIF", "CIF-ITEM")], ["FOB Total", "Flete Total", "CIF Total", "CIF Item"])
         self.assertEqual([IMPORT_COLUMN_MAP[key] for key in ("valor_fob", "valor_flete", "valor_seguro")], ["FOB-Item", "Flete-Item", "Seguro-Item"])
         self.assertNotIn("valor_cif", IMPORT_COLUMN_MAP)
+        self.assertEqual([IMPORT_COLUMN_MAP[f"raw:{idx(label)}"] for label in ("DNOMBRE", "DOTRO1", "ATR-6", "OTRO1", "VAL4")],
+                         ["MERCADERIA (DNOMBRE)", "OTROS1 (DOTRO1)", "OTROS4 (ATR-6)", "OTRO1 - % impuesto/cargo 1", "VAL4 - Monto impuesto/cargo 4"])
         self.assertEqual(LEGACY_COLUMN_ALIASES["valor_cif"], f"raw:{idx('CIF-ITEM')}")
