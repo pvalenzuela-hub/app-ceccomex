@@ -53,7 +53,8 @@ IMPORT_COLUMNS = [
     ("tpo_bul3_glosa", "TPO_BUL3 - descripción"), ("tpo_bul4_glosa", "TPO_BUL4 - descripción"),
     ("tpo_bul5_glosa", "TPO_BUL5 - descripción"), ("tpo_bul6_glosa", "TPO_BUL6 - descripción"),
     ("tpo_bul7_glosa", "TPO_BUL7 - descripción"), ("tpo_bul8_glosa", "TPO_BUL8 - descripción"),
-    ("valor_fob", "FOB-Item"), ("valor_flete", "Flete-Item"), ("valor_seguro", "Seguro-Item"),
+    ("valor_fob", "VAL-FOB-ITEM - FOB-Item"), ("valor_flete", "VAL-FLE-ITEM - Flete-Item"),
+    ("valor_seguro", "VAL-SEG-ITEM - Seguro-Item"),
     ("raw:54", "REG_IMP - Régimen de importación"),
     ("raw:59", "VALEXFAB - Valor Ex-Fábrica"), ("raw:61", "MONGASFOB - Gastos hasta FOB"),
     ("raw:71", "TOT_PESO - Total peso"), ("raw:144", "MEDIDA - Código unidad de medida"),
@@ -105,14 +106,11 @@ LEGACY_ONLY_COLUMNS = {
     "zona_economica": ("ZON_ECO", "Zona económica (solo 2015)"),
     "clave_economica": ("CLA_ECO", "Clave económica (solo 2015)"),
 }
-# Item values the DIN TXT does not carry, prorated by the item's share of the CIF
-# (doc-req/FORMULA ULTIMOS 4 CAMPOS IMPORTACIONES.xlsx); MDB 2015 has them per item.
-ITEM_COLUMNS = {
-    "valor_fob": ("FOB", "FOB_ITEM"), "valor_flete": ("FLETE", "FLE_ITEM"), "valor_seguro": ("SEGURO", "SEG_ITEM"),
-    "precio_unitario_cif": (None, "PRE_UCIF"),
-}
+# Item values the DIN does not carry, prorated by the item's share of the CIF, and the CIF unit price
+# (doc-req/FORMULA ULTIMOS 4 CAMPOS IMPORTACIONES.xlsx). MDB 2015 rows use the same formulas on their fields.
+ITEM_COLUMNS = {"valor_fob": "FOB", "valor_flete": "FLETE", "valor_seguro": "SEGURO", "precio_unitario_cif": None}
 IMPORT_COLUMNS.extend((key, label) for key, (_, label) in LEGACY_ONLY_COLUMNS.items())
-IMPORT_COLUMNS.append(("precio_unitario_cif", "Precio unitario CIF"))
+IMPORT_COLUMNS.append(("precio_unitario_cif", "PREC-UNIT - Precio unitario CIF"))
 IMPORT_COLUMN_MAP = dict(IMPORT_COLUMNS)
 DEFAULT_COLUMNS = [key for key, _ in IMPORT_DEFAULT_COLUMNS]
 
@@ -295,15 +293,17 @@ def _derivados(row):
 
 
 def _item_value(row, key):
-    total, legacy_field = ITEM_COLUMNS[key]
+    total = ITEM_COLUMNS[key]
     legacy = row.payload_json.get("legacy_fields")
-    if legacy:
-        return legacy.get(legacy_field, "")
     raw = row.payload_json.get("raw_columns", [])
 
     def number(label):
-        index = DIN_POSITIONS[label]
-        value = to_number(raw[index] if index < len(raw) else "")
+        if legacy:
+            value = legacy.get(LEGACY_DIN_NAMES[label], "")
+        else:
+            index = DIN_POSITIONS[label]
+            value = raw[index] if index < len(raw) else ""
+        value = to_number(value)
         return value if isinstance(value, float) else None
 
     cif_item = number("CIF-ITEM")

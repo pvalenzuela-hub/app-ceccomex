@@ -186,7 +186,8 @@ class DescripcionYValoresItemTests(TestCase):
             raw[idx(label)] = value
         txt = SimpleNamespace(payload_json={"raw_columns": raw}, glosa_mercancia=values["DNOMBRE"], importador_probable_sugerido=None)
         mdb = SimpleNamespace(
-            payload_json={"legacy_fields": {"MERCADERIA": "MANGO", "ATRI1": "MACHU PICCHU-F", "FOB_ITEM": "250.75", "PRE_UCIF": "1.5", "DES_OB1": "00006000.000000 CAJAS"}},
+            payload_json={"legacy_fields": {"MERCADERIA": "MANGO", "ATRI1": "MACHU PICCHU-F", "FOB_ITEM": "250.75", "PRE_UCIF": "1.5", "DES_OB1": "00006000.000000 CAJAS",
+                                          "CIF_ITEM": "9000", "CIF_TOTAL": "12000", "VAL_FOB": "10000", "VAL_FLETE": "1600", "MON_SEG": "400", "CANT_MERC": "6000"}},
             importador_probable_sugerido=None,
         )
         value = lambda row, key: _column_value(row, key, {})
@@ -195,15 +196,15 @@ class DescripcionYValoresItemTests(TestCase):
         self.assertEqual((value(txt, "cantidad_observada"), value(txt, "unidad_observada")), (81, "T.M"))
         self.assertEqual([value(txt, key) for key in ("valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif")], [200, 37.5, 12.5, 25])
         self.assertEqual(value(txt, f"raw:{idx('FOB')}"), 800)
-        self.assertEqual([value(mdb, key) for key in (f"raw:{idx('DNOMBRE')}", f"raw:{idx('DMARCA')}", "valor_fob", "precio_unitario_cif", "cantidad_observada")],
-                         ["MANGO", "MACHU PICCHU", 250.75, 1.5, 6000])
+        self.assertEqual([value(mdb, key) for key in (f"raw:{idx('DNOMBRE')}", f"raw:{idx('DMARCA')}", "valor_fob", "valor_flete", "valor_seguro", "precio_unitario_cif", "cantidad_observada")],
+                         ["MANGO", "MACHU PICCHU", 7500, 1200, 300, 1.5, 6000])
 
     def test_labels_and_old_cif_column(self):
         from reportes.views import IMPORT_COLUMN_MAP, LEGACY_COLUMN_ALIASES
 
         idx = DIN_LABELS.index
         self.assertEqual([IMPORT_COLUMN_MAP[f"raw:{idx(label)}"] for label in ("FOB", "FLETE", "CIF", "CIF-ITEM")], ["FOB Total", "Flete Total", "CIF Total", "CIF Item"])
-        self.assertEqual([IMPORT_COLUMN_MAP[key] for key in ("valor_fob", "valor_flete", "valor_seguro")], ["FOB-Item", "Flete-Item", "Seguro-Item"])
+        self.assertEqual([IMPORT_COLUMN_MAP[key] for key in ("valor_fob", "valor_flete", "valor_seguro")], ["VAL-FOB-ITEM - FOB-Item", "VAL-FLE-ITEM - Flete-Item", "VAL-SEG-ITEM - Seguro-Item"])
         self.assertNotIn("valor_cif", IMPORT_COLUMN_MAP)
         self.assertEqual([IMPORT_COLUMN_MAP[f"raw:{idx(label)}"] for label in ("DNOMBRE", "DOTRO1", "ATR-6", "OTRO1", "VAL4")],
                          ["MERCADERIA (DNOMBRE)", "OTROS1 (DOTRO1)", "OTROS4 (ATR-6)", "OTRO1 - % impuesto/cargo 1", "VAL4 - Monto impuesto/cargo 4"])
