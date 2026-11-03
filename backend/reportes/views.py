@@ -230,15 +230,19 @@ def _period_range_q(desde, hasta):
 
 # Rows loaded before the parser followed the official DIN positions keep other data in these fields, so the
 # code comes from the file line; the field is only a fallback for rows without it.
-CODIGOS_DIN = {"aduana_codigo": "ADU", "pais_origen_codigo": "PA_ORIG"}
+CODIGOS_DIN = {
+    "aduana_codigo": "ADU", "pais_origen_codigo": "PA_ORIG", "comuna_importador_codigo": "CODCOMUN",
+    "partida_arancelaria_codigo": "ARANC-NAC",
+}
 
 
 def _codigo_din_sql(field):
     label = CODIGOS_DIN[field]
-    legacy = KeyTextTransform(LEGACY_DIN_NAMES[label], KeyTransform("legacy_fields", "payload_json"))
-    raw = KeyTextTransform(str(DIN_POSITIONS[label]), KeyTransform("raw_columns", "payload_json"))
     blank = Value("")
-    return Coalesce(NullIf(legacy, blank, output_field=TextField()), NullIf(raw, blank, output_field=TextField()), F(field), output_field=TextField())
+    sources = [KeyTextTransform(str(DIN_POSITIONS[label]), KeyTransform("raw_columns", "payload_json"))]
+    if label in LEGACY_DIN_NAMES:  # The MDB 2015 has no comuna.
+        sources.insert(0, KeyTextTransform(LEGACY_DIN_NAMES[label], KeyTransform("legacy_fields", "payload_json")))
+    return Coalesce(*(NullIf(source, blank, output_field=TextField()) for source in sources), F(field), output_field=TextField())
 
 
 def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=None, hasta=None):
@@ -249,17 +253,13 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
         qs = qs.filter(periodo_anio=periodo_anio)
     if periodo_mes:
         qs = qs.filter(periodo_mes=periodo_mes)
-    for field in ("comuna_importador_codigo", "via_transporte_codigo"):
-        values = _selected_values(filters.get(field, []))
-        if values:
-            qs = qs.filter(**{f"{field}__in": values})
+    via = _selected_values(filters.get("via_transporte_codigo", []))
+    if via:
+        qs = qs.filter(via_transporte_codigo__in=via)
     for field in CODIGOS_DIN:
-        values = _selected_values(filters.get(field, []))
+        values = _selected_values(filters.get("partidas" if field == "partida_arancelaria_codigo" else field, []))
         if values:
             qs = qs.alias(**{f"_{field}": _codigo_din_sql(field)}).filter(**{f"_{field}__in": values})
-    tarifas = _selected_values(filters.get("partidas", []))
-    if tarifas:
-        qs = qs.filter(partida_arancelaria_codigo__in=tarifas)
     paises_adquisicion = _selected_values(filters.get("pais_adquisicion_codigo", []))
     if paises_adquisicion:
         qs = qs.filter(
@@ -372,7 +372,7 @@ def _text_column_value(row, key, catalogos):
             codigo = codigo_din(source) if source in CODIGOS_DIN else getattr(row, source)
         return catalogos.get(grupo, {}).get(str(codigo), "")
     if key == "partida_glosa":
-        return catalogos.get("partidas", {}).get(row.partida_arancelaria_codigo, "")
+        return catalogos.get("partidas", {}).get(codigo_din("partida_arancelaria_codigo"), "")
     if key == "iva_item":
         # IVA of the item: the OTRO1..OTRO4 tax group booked to account 178.
         total = None

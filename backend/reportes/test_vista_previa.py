@@ -251,12 +251,15 @@ class CodigosDinCorridosTests(VistaPreviaBase):
     def setUpTestData(cls):
         source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="IMP")
         common = {"archivo_origen": source, "periodo_anio": 2026, "periodo_mes": 2}
-        Importacion.objects.create(**common, numero_ident="VIEJA", aduana_codigo="13102", pais_origen_codigo="96", payload_json=din_payload(ADU="39", PA_ORIG="336"))
-        Importacion.objects.create(**common, numero_ident="MDB", aduana_codigo="", pais_origen_codigo="", payload_json={"legacy_fields": {"COD_ADU": "48", "PAI_ORI": "219"}})
+        Importacion.objects.create(**common, numero_ident="VIEJA", aduana_codigo="13102", pais_origen_codigo="96", partida_arancelaria_codigo="00000000", comuna_importador_codigo="", payload_json=din_payload(ADU="39", PA_ORIG="336", CODCOMUN="13102", ARANC_NAC="39199090", ARANC_ALA="00000000"))
+        Importacion.objects.create(**common, numero_ident="MDB", aduana_codigo="", pais_origen_codigo="", partida_arancelaria_codigo="08045000", payload_json={"legacy_fields": {"COD_ADU": "48", "PAI_ORI": "219", "COD_AAR": "08045000"}})
         CatalogoCodigo.objects.create(grupo="aduanas", codigo="39", glosa="SAN ANTONIO")
         CatalogoCodigo.objects.create(grupo="aduanas", codigo="48", glosa="METROPOLITANA")
         CatalogoCodigo.objects.create(grupo="paises", codigo="336", glosa="CHINA")
         CatalogoCodigo.objects.create(grupo="paises", codigo="219", glosa="PERU")
+        CatalogoCodigo.objects.create(grupo="comunas", codigo="13102", glosa="CERRILLOS")
+        PartidaArancelaria.objects.create(codigo="39199090", glosa="Las demás láminas autoadhesivas")
+        PartidaArancelaria.objects.create(codigo="08045000", glosa="Mangos")
 
     def test_columns_show_the_code_of_the_file_line(self):
         columnas = ["numero_ident", "aduana_codigo", "aduana_glosa", "pais_origen_codigo", "pais_origen_glosa"]
@@ -274,3 +277,20 @@ class CodigosDinCorridosTests(VistaPreviaBase):
         self.assertEqual(idents(filtros_columnas={"aduana_glosa": "san antonio"}), ["VIEJA"])
         self.assertEqual(idents(filtros_columnas={"pais_origen_glosa": "peru"}), ["MDB"])
         self.assertEqual(idents(filtros_columnas={"pais_origen_codigo": "336"}), ["VIEJA"])
+
+    def test_tariff_and_comuna_come_from_the_file_line(self):
+        columnas = ["numero_ident", "partida_arancelaria_codigo", "partida_glosa", "comuna_importador_codigo", "comuna_importador_glosa"]
+        filas = {fila[0]: fila[1:] for fila in self.post(IMPORT_URL, columnas=columnas).json()["filas"]}
+        self.assertEqual(filas["VIEJA"], ["39199090", "Las demás láminas autoadhesivas", "13102", "CERRILLOS"])
+        self.assertEqual(filas["MDB"], ["08045000", "Mangos", "", ""])
+
+    def test_tariff_and_comuna_filters_use_the_file_line(self):
+        def idents(**body):
+            return sorted(fila[0] for fila in self.post(IMPORT_URL, **body).json()["filas"])
+
+        self.assertEqual(idents(filtros={"partidas": ["39199090"]}), ["VIEJA"])
+        self.assertEqual(idents(filtros={"partidas": ["00000000"]}), [])
+        self.assertEqual(idents(filtros={"comuna_importador_codigo": ["13102"]}), ["VIEJA"])
+        self.assertEqual(idents(filtros_columnas={"partida_arancelaria_codigo": "3919"}), ["VIEJA"])
+        self.assertEqual(idents(filtros_columnas={"partida_glosa": "laminas"}), ["VIEJA"])
+        self.assertEqual(idents(filtros_columnas={"comuna_importador_glosa": "cerrillos"}), ["VIEJA"])
