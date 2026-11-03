@@ -245,7 +245,7 @@ export default function ConsultasPage() {
       <section className="dashboard-hero">
         <div>
           <p className="eyebrow">CEC COMEX Platform</p>
-          <h1>Consultas</h1>
+          <h1>Búsqueda DIN</h1>
           <p className="lead">Busca importaciones ya materializadas en una vista separada del panel operativo.</p>
         </div>
         <div className="dashboard-meta">

@@ -110,7 +110,7 @@ export default function ConsultasExportacionesPage() {
       <section className="dashboard-hero">
         <div>
           <p className="eyebrow">CEC COMEX Platform</p>
-          <h1>Consultas de exportaciones</h1>
+          <h1>Búsqueda DUS</h1>
           <p className="lead">Busca ítems de DUS por período, aduana, destino, arancel o mercadería. Haz clic en un DUS para ver sus bultos y documentos de transporte.</p>
         </div>
         <div className="dashboard-meta"><div className="meta-chip">Exportaciones DUS</div></div>

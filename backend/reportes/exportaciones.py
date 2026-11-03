@@ -137,9 +137,10 @@ def filtered_exportaciones_informe(filters, periodo_anio=None, periodo_mes=None,
     exportadores = _selected_values(filters.get("exportadores", []))
     if exportadores:
         qs = qs.filter(exportador_codigo__in=exportadores)
-    productos = _selected_values(filters.get("productos", []))
-    if productos:
-        qs = qs.filter(producto_q(productos))
+    for field in ("marcas", "productos"):
+        terms = _selected_values(filters.get(field, []))
+        if terms:
+            qs = qs.filter(producto_q(terms))
     return qs
 
 

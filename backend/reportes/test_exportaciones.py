@@ -71,6 +71,7 @@ class ExportacionesConsultaInformeTests(TestCase):
 
     def test_report_filters_products_without_accents_exporters_and_range(self):
         self.assertEqual([row[0] for row in self.report({"productos": ["úvas", "red globe"]}, ["item"])[1:]], ["2"])
+        self.assertEqual([row[0] for row in self.report({"marcas": ["red globe"], "productos": ["úvas"]}, ["item"])[1:]], ["2"])
         self.assertEqual(len(self.report({"exportadores": ["7435"]}, ["item"])), 3)
         self.assertEqual(len(self.report({"exportadores": ["1"]}, ["item"])), 1)
         self.assertEqual(len(self.report({}, ["item"], desde=(2026, 3), hasta=(2026, 9))), 1)

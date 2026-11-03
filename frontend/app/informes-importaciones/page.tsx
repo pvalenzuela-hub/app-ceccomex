@@ -19,21 +19,22 @@ async function importadorLabels(ids: string[]) {
 }
 
 const universe: FilterSpec[] = [
-  { type: 'terms', key: 'productos', label: 'Productos / Marca', placeholder: 'Ej. SAMSUNG o neumáticos — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados.' },
-  { type: 'remote', key: 'importadores', label: 'Importador', placeholder: 'Nombre o RUT del importador propuesto', search: searchImportadores, labelsFor: importadorLabels },
-  { type: 'catalog', key: 'pais_origen_codigo', label: 'País de origen', placeholder: 'Buscar país por nombre o código', catalog: 'PAISES' },
-  { type: 'catalog', key: 'pais_adquisicion_codigo', label: 'País de adquisición', placeholder: 'Buscar país por nombre o código', catalog: 'PAISES' },
   { type: 'partidas', key: 'partidas' },
-  { type: 'catalog', key: 'aduana_codigo', label: 'Aduana', placeholder: 'Buscar aduana por nombre o código', catalog: 'ADUANAS' },
+  { type: 'remote', key: 'importadores', label: 'Importador', placeholder: 'Nombre o RUT del importador propuesto', search: searchImportadores, labelsFor: importadorLabels },
+  { type: 'terms', key: 'marcas', label: 'Marca', placeholder: 'Ej. SAMSUNG — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados.' },
+  { type: 'terms', key: 'productos', label: 'Producto', placeholder: 'Ej. neumáticos — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados.' },
 ]
 
 // Filters beyond the main universe; kept so existing rubros keep working.
 const otherFilters: FilterSpec[] = [
+  { type: 'catalog', key: 'pais_origen_codigo', label: 'País de origen', placeholder: 'Buscar país por nombre o código', catalog: 'PAISES' },
+  { type: 'catalog', key: 'pais_adquisicion_codigo', label: 'País de adquisición', placeholder: 'Buscar país por nombre o código', catalog: 'PAISES' },
+  { type: 'catalog', key: 'aduana_codigo', label: 'Aduana', placeholder: 'Buscar aduana por nombre o código', catalog: 'ADUANAS' },
   { type: 'catalog', key: 'comuna_importador_codigo', label: 'Comuna importador', placeholder: 'Buscar por nombre o código', catalog: 'COMUNAS' },
   { type: 'catalog', key: 'via_transporte_codigo', label: 'Vía de transporte', placeholder: 'Buscar por nombre o código', catalog: 'VIAS_TRANSPORTE' },
   { type: 'catalog', key: 'regimenes', label: 'Régimen de importación', placeholder: 'Buscar por nombre o código', catalog: 'REGIMENES' },
 ]
 
 export default function InformesImportacionesPage() {
-  return <ReportBuilder kind="importaciones" title="Importaciones DIN" lead="Define los datos de salida y limita el universo antes de generar tu archivo Excel." columnSearchPlaceholder="Buscar campo DIN, código o descripción" universe={universe} otherFilters={{ summary: 'Otros filtros (comuna, vía, régimen)', filters: otherFilters }} />
+  return <ReportBuilder kind="importaciones" title="Consulta de Importaciones" lead="Define los datos de salida y limita el universo antes de generar tu archivo Excel." columnSearchPlaceholder="Buscar campo DIN, código o descripción" universe={universe} otherFilters={{ summary: 'Otros filtros (país, aduana, comuna, vía, régimen)', filters: otherFilters }} />
 }

@@ -43,6 +43,9 @@ class InformeImportacionesUniversoTests(TestCase):
         self.assertEqual(self.ids({"productos": ["machu picchu"]}), {"2"})
         self.assertEqual(self.ids({"productos": ["sony", "mango"]}), {"1", "2"})
         self.assertEqual(self.ids({"productos": ["todos sus accesorios"]}), {"1"})
+        self.assertEqual(self.ids({"marcas": ["sony"]}), {"1"})
+        self.assertEqual(self.ids({"marcas": ["sony"], "productos": ["todos sus accesorios"]}), {"1"})
+        self.assertEqual(self.ids({"marcas": ["sony"], "productos": ["mango"]}), set())
 
     def test_country_of_acquisition_reads_din_position_and_mdb_field(self):
         self.assertEqual(self.ids({"pais_adquisicion_codigo": ["225"]}), {"1"})

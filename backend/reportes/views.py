@@ -248,10 +248,11 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
     importadores = [int(value) for value in _selected_values(filters.get("importadores", [])) if value.isdigit()]
     if importadores:
         qs = qs.filter(importador_probable_sugerido_id__in=importadores)
-    productos = _selected_values(filters.get("productos", []))
-    if productos:
-        qs = qs.filter(producto_q(productos))
-    regimenes = _selected_values(filters.get("regimenes", []))
+    for field in ("marcas", "productos"):
+        terms = _selected_values(filters.get(field, []))
+        if terms:
+            qs = qs.filter(producto_q(terms))
+    regimenes =_selected_values(filters.get("regimenes", []))
     if regimenes:
         qs = qs.filter(
             Q(payload_json__raw_columns__54__in=regimenes)
