@@ -161,8 +161,12 @@ export default function DashboardPage() {
     formData.set('nombre_archivo', file.name)
 
     try {
+      await fetch(`${apiBaseUrl}/api/health/`, { credentials: 'include' })
+      const csrfToken = document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
       const response = await fetch(`${apiBaseUrl}/api/comercio/upload/`, {
         method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': csrfToken },
         body: formData,
       })
       const rawText = await response.text()

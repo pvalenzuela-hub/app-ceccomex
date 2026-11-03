@@ -211,7 +211,9 @@ export default function ConsultasPage() {
 
   async function saveFavorite() {
     if (!favoriteName.trim()) return setMessage('Asigna un nombre al favorito.')
-    const response = await fetch(`${apiBaseUrl}/api/consultas/favoritos/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: favoriteName.trim(), filtros_json: filters }) })
+    await fetch(`${apiBaseUrl}/api/health/`, { credentials: 'include' })
+    const csrfToken = document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
+    const response = await fetch(`${apiBaseUrl}/api/consultas/favoritos/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }, body: JSON.stringify({ nombre: favoriteName.trim(), filtros_json: filters }) })
     if (!response.ok) return setMessage('No se pudo guardar el favorito.')
     setFavoriteName('')
     await loadFavorites()
