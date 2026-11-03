@@ -18,6 +18,7 @@ from comercio.busqueda import normalizar
 from comercio.descripcion import campos_descripcion
 from comercio.legacy_mdb import LEGACY_COLUMNS
 from comercio.models import Importacion
+from reportes.columnas import VALORES_LIMITE, VALORES_LIMITE_MAXIMO, ColumnaCalculada, ColumnaCatalogo, ColumnaEntero, ColumnaNumero, ColumnaTexto, aplicar_filtros_columnas
 from reportes.models import ImportadorProbable, InformeExcel, PerfilImportador, ReporteSectorial, ReporteSectorialDetalle, RubroImportacion
 from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialDetalleSerializer, ReporteSectorialSerializer, RubroImportacionSerializer
 
@@ -510,99 +511,66 @@ IMPORT_CATALOG_GROUPS = (
 def consulta_importaciones(parametros):
     desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
     qs = _filtered_importaciones(parametros.get("filtros", {}), desde=desde, hasta=hasta)
-    return filtrar_columnas_importaciones(qs, parametros.get("filtros_columnas", {}))
+    return aplicar_filtros_columnas(qs, parametros.get("filtros_columnas", {}), lambda key: columna_importacion(key, parametros))
 
 
-# Columns computed in Python from payload_json, with no SQL equivalent.
-COLUMNAS_CALCULADAS = {*ITEM_COLUMNS, *DESCRIPCION_COLUMNS, "cantidad_observada", "unidad_observada", "iva_item"}
-# A column filter reads this many rows in Python at most, about the time of the totals of a full month.
-COLUMNA_MAX_FILAS_CALCULADAS = 50_000
+# Computed in Python from payload_json; only the description ones are text worth listing.
+COLUMNAS_CALCULADAS_NUMERO = {*ITEM_COLUMNS, "cantidad_observada", "iva_item"}
+COLUMNAS_CALCULADAS_TEXTO = {*DESCRIPCION_COLUMNS, "unidad_observada"}
+# Dates and consecutive numbers: too many distinct values and nothing to pick from them.
+DIN_FECHAS = {f"raw:{index}" for index, label in enumerate(DIN_LABELS) if label.startswith("FEC")}
 
 
 def _din_texto_indice(index):
     raw = KeyTextTransform(str(index), KeyTransform("raw_columns", "payload_json"))
     if index in LEGACY_DIN_BY_INDEX:
-        return Coalesce(KeyTextTransform(LEGACY_DIN_BY_INDEX[index], KeyTransform("legacy_fields", "payload_json")), raw)
+        return Coalesce(KeyTextTransform(LEGACY_DIN_BY_INDEX[index], KeyTransform("legacy_fields", "payload_json")), raw, output_field=TextField())
     return raw
 
 
-def _contiene(qs, nombre, expression, term):
-    """Rows whose text holds the term, as typed or without accents: customs text rarely has them."""
-    match = Q(**{f"{nombre}__icontains": term}) | Q(**{f"{nombre}__icontains": normalizar(term)})
-    return qs.alias(**{nombre: expression}).filter(match)
+def _glosas_catalogo(grupo):
+    return lambda: list(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa"))
 
 
-def _texto_numero(term):
-    """Decimal comma or point alike; ",07" has no leading zero in the DIN TXT."""
-    term = term.replace(",", ".")
-    return term[1:] if term.startswith("0.") else term
+def _glosas_partidas():
+    return list(PartidaArancelaria.objects.values_list("codigo", "glosa"))
 
 
-def _filtrar_columna_sql(qs, nombre, key, term):
-    if key in GLOSA_COLUMNS or key == "partida_glosa":
-        if key == "partida_glosa":
-            grupo, source = None, "partida_arancelaria_codigo"
-            glosas = PartidaArancelaria.objects.values_list("codigo", "glosa")
-        else:
-            grupo, source = GLOSA_COLUMNS[key]
-            glosas = CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa")
-        buscado = normalizar(term)
-        codigos = [codigo for codigo, glosa in glosas if buscado in normalizar(glosa)]
-        if source in CODIGOS_DIN:
-            return qs.alias(**{nombre: codigo_din_sql(source)}).filter(**{f"{nombre}__in": codigos})
-        if isinstance(source, str):
-            return qs.filter(**{f"{source}__in": codigos})
-        return qs.alias(**{nombre: _din_texto_indice(source)}).filter(**{f"{nombre}__in": codigos})
+def columna_importacion(key, parametros=None):
+    """How to filter and list a report column, matching what _column_value shows."""
+    if key in COLUMNAS_CALCULADAS_NUMERO or key in COLUMNAS_CALCULADAS_TEXTO:
+        return ColumnaCalculada(
+            lambda row: _column_value(row, key, {}), IMPORT_COLUMN_MAP[key],
+            palabras_en_texto=key in DESCRIPCION_COLUMNS, lista=key in COLUMNAS_CALCULADAS_TEXTO,
+        )
+    if key == "partida_glosa":
+        return ColumnaCatalogo(codigo_din_sql("partida_arancelaria_codigo"), _glosas_partidas)
+    if key in GLOSA_COLUMNS:
+        grupo, source = GLOSA_COLUMNS[key]
+        codigo = codigo_din_sql(source) if source in CODIGOS_DIN else F(source) if isinstance(source, str) else _din_texto_indice(source)
+        return ColumnaCatalogo(codigo, _glosas_catalogo(grupo))
+    if key == "item":
+        return ColumnaNumero(codigo_din_sql(key))
+    if key in CODIGOS_DIN:
+        return ColumnaTexto(codigo_din_sql(key))
     if key == "importador_probable":
         legacy = KeyTextTransform("IMPORT", KeyTransform("legacy_fields", "payload_json"))
-        return qs.alias(**{nombre: Coalesce("importador_probable_sugerido__nombre", legacy, output_field=TextField())}).filter(**{f"{nombre}__icontains": term})
+        return ColumnaTexto(Coalesce("importador_probable_sugerido__nombre", legacy, output_field=TextField()))
     if key == "importador_rut":
         legacy = KeyTextTransform("RUT", KeyTransform("legacy_fields", "payload_json"))
-        return _contiene(qs, nombre, Coalesce(legacy, _din_texto_indice(DIN_POSITIONS["NUM_UNICO_IMPORTADOR"])), term)
+        return ColumnaTexto(Coalesce(legacy, _din_texto_indice(DIN_POSITIONS["NUM_UNICO_IMPORTADOR"]), output_field=TextField()))
     if key in LEGACY_ONLY_COLUMNS:
-        return _contiene(qs, nombre, KeyTextTransform(LEGACY_ONLY_COLUMNS[key][0], KeyTransform("legacy_fields", "payload_json")), term)
-    if key in CODIGOS_DIN:
-        return _contiene(qs, nombre, codigo_din_sql(key), term)
+        return ColumnaTexto(KeyTextTransform(LEGACY_ONLY_COLUMNS[key][0], KeyTransform("legacy_fields", "payload_json")))
     if key in ("periodo_anio", "periodo_mes"):
-        # "1" must find January, not also October to December.
-        return qs.filter(**{key: int(term)}) if term.isdigit() else qs.none()
+        return ColumnaEntero(key)
+    if key == "fecha_text":
+        return ColumnaTexto(F(key), lista=False)
     if key.startswith("raw:"):
         text = _din_texto_indice(int(key.split(":", 1)[1]))
         if key in AMOUNT_COLUMNS:
-            return qs.alias(**{nombre: Replace(text, Value(","), Value("."), output_field=TextField())}).filter(**{f"{nombre}__icontains": _texto_numero(term)})
-        return _contiene(qs, nombre, text, term)
-    return _contiene(qs, nombre, F(key), term)
-
-
-def _texto_celda(value):
-    """A value as the table shows it: decimal comma and no trailing ".0"."""
-    if isinstance(value, float):
-        return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", ",")
-    return normalizar(value)
-
-
-def filtrar_columnas_importaciones(qs, filtros_columnas):
-    """Rows where each column holds its text. SQL first; computed columns are then read in Python over what is left."""
-    calculadas = {}
-    for position, (key, term) in enumerate(filtros_columnas.items()):
-        if key not in COLUMNAS_CALCULADAS:
-            qs = _filtrar_columna_sql(qs, f"_columna_{position}", key, term)
-            continue
-        calculadas[key] = normalizar(term)
-        if key in DESCRIPCION_COLUMNS:
-            # Every word of these columns is inside the trigram-indexed product text.
-            for word in calculadas[key].split():
-                qs = qs.filter(texto_producto__contains=word)
-    if not calculadas:
-        return qs
-    if qs.count() > COLUMNA_MAX_FILAS_CALCULADAS:
-        nombres = ", ".join(IMPORT_COLUMN_MAP[key] for key in calculadas)
-        raise ValueError(f"Hay demasiados registros para filtrar por {nombres}. Acote el período o agregue otros filtros.")
-    ids = [
-        row.id for row in qs.order_by().select_related(None).iterator(chunk_size=2000)
-        if all(term in _texto_celda(_column_value(row, key, {})) for key, term in calculadas.items())
-    ]
-    return qs.filter(id__in=ids)
+            return ColumnaNumero(text)
+        return ColumnaTexto(text, lista=key not in DIN_FECHAS)
+    return ColumnaTexto(F(key))
 
 
 def informe_importaciones_rows(parametros):
@@ -622,9 +590,17 @@ def _informe_json(informe):
     }
 
 
+def _filtro_columna(value):
+    """The values selected in a list, or the text typed in a column."""
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()][:500]
+    return str(value).strip()[:200]
+
+
 def _parametros_informe(request, column_map, default_columns):
     """Validated parameters of a report request, shared by the preview and the Excel; 400 otherwise."""
-    requested = [LEGACY_COLUMN_ALIASES.get(key, key) for key in request.data.get("columnas", default_columns)]
+    # The aliases are old import keys; export columns such as glosa_mercancia are valid as they are.
+    requested = [key if key in column_map else LEGACY_COLUMN_ALIASES.get(key, key) for key in request.data.get("columnas", default_columns)]
     columns = list(dict.fromkeys(key for key in requested if key in column_map))
     if not columns:
         raise ParseError("Seleccione al menos una columna.")
@@ -642,7 +618,7 @@ def _parametros_informe(request, column_map, default_columns):
     filtros_columnas = request.data.get("filtros_columnas", {})
     if not isinstance(filtros_columnas, dict):
         raise ParseError("Filtros no válidos.")
-    filtros_columnas = {key: str(value).strip()[:200] for key, value in filtros_columnas.items() if key in column_map and str(value).strip()}
+    filtros_columnas = {key: _filtro_columna(value) for key, value in filtros_columnas.items() if key in column_map and _filtro_columna(value)}
     return {
         "columnas": columns, "filtros": filtros, "filtros_columnas": filtros_columnas,
         "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]},
@@ -723,7 +699,7 @@ PREVIEW_MAX_PAGE_SIZE = 200
 PREVIEW_MAX_TOTAL_ROWS = 2_000_000
 
 
-def vista_previa(request, column_map, default_columns, consulta, totales, valores):
+def vista_previa(request, column_map, default_columns, consulta, totales, valores, columna):
     """One page of the report rows; `totales: false` skips the totals when only the page changes."""
     parametros = _parametros_informe(request, column_map, default_columns)
     try:
@@ -737,13 +713,31 @@ def vista_previa(request, column_map, default_columns, consulta, totales, valore
     page = Paginator(qs, por_pagina).get_page(request.data.get("pagina", 1))
     sin_totales = page.paginator.count > PREVIEW_MAX_TOTAL_ROWS
     return Response({
-        "columnas": [{"key": key, "label": column_map[key]} for key in parametros["columnas"]],
+        "columnas": [{"key": key, "label": column_map[key], "filtro": "lista" if columna(key, parametros).lista else "texto"} for key in parametros["columnas"]],
         "filas": valores(parametros, list(page.object_list)),
         "pagina": page.number, "paginas": page.paginator.num_pages, "por_pagina": por_pagina,
         "registros": page.paginator.count,
         "totales": totales(qs) if request.data.get("totales", True) and not sin_totales else None,
         "totales_omitidos": sin_totales,
     })
+
+
+def valores_vista_previa(request, column_map, default_columns, consulta, columna):
+    """Values of a list column for the current query: period, universe and the filters of the other columns."""
+    parametros = _parametros_informe(request, column_map, default_columns)
+    key = request.data.get("columna")
+    if key not in column_map or not columna(key, parametros).lista:
+        raise ParseError("Esta columna no tiene lista de valores.")
+    parametros["filtros_columnas"] = {other: filtro for other, filtro in parametros["filtros_columnas"].items() if other != key}
+    try:
+        limite = min(max(int(request.data.get("limite", VALORES_LIMITE)), 1), VALORES_LIMITE_MAXIMO)
+    except (TypeError, ValueError):
+        limite = VALORES_LIMITE
+    try:
+        qs = consulta(parametros)
+    except ValueError as error:
+        raise ParseError(str(error))
+    return Response(columna(key, parametros).valores(qs, str(request.data.get("buscar", "")).strip()[:200], limite))
 
 
 def _valores_importaciones(parametros, filas):
@@ -754,7 +748,13 @@ def _valores_importaciones(parametros, filas):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def vista_previa_importaciones(request):
-    return vista_previa(request, IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, consulta_importaciones, totales_importaciones, _valores_importaciones)
+    return vista_previa(request, IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, consulta_importaciones, totales_importaciones, _valores_importaciones, columna_importacion)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def valores_columna_importaciones(request):
+    return valores_vista_previa(request, IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, consulta_importaciones, columna_importacion)
 
 
 @api_view(["POST"])

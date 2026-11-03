@@ -4,7 +4,8 @@ import tempfile
 from collections import defaultdict
 
 import xlsxwriter
-from django.db.models import Case, Count, F, Q, When
+from django.db.models import Case, Count, F, Q, TextField, Value, When
+from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.http import FileResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -14,7 +15,8 @@ from rest_framework.response import Response
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.dus_txt import DUS_COLUMNS
 from comercio.models import Exportacion, ExportacionBulto, ExportacionDocTransporte
-from reportes.views import MONTO, _period_range_q, numero_sql, parse_periodo, producto_q, resumir_totales, solicitar_informe, vista_previa
+from reportes.columnas import ColumnaCatalogo, ColumnaEntero, ColumnaNumero, ColumnaRelacion, ColumnaTexto, aplicar_filtros_columnas
+from reportes.views import MONTO, _glosas_catalogo, _glosas_partidas, _period_range_q, numero_sql, parse_periodo, producto_q, resumir_totales, solicitar_informe, valores_vista_previa, vista_previa
 
 
 # (field on Exportacion, catalog group) for every code that has a description.
@@ -218,11 +220,66 @@ def exportaciones_configuracion(request):
     })
 
 
+# DUS fields that hold amounts, quantities, dates or consecutive numbers keep the text filter.
+DUS_PREFIJOS_NUMERO = ("VALOR", "FOB", "TOTAL", "PESO", "CANTIDAD", "PORCENTAJE", "COMISIONES", "OTROSGASTOS", "NUMEROITEM", "NUMEROPARCIALIDAD", "PLAZO")
+
+
+def columna_exportacion(key, parametros):
+    """How to filter and list a report column, matching what export_column_value shows."""
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    if key.startswith("dus:"):
+        name = key[4:]
+        text = KeyTextTransform(name, KeyTransform("dus_fields", "payload_json"))
+        if name.startswith(DUS_PREFIJOS_NUMERO):
+            return ColumnaNumero(text)
+        return ColumnaTexto(text, lista=not name.startswith("FECHA"))
+    if key.endswith("_glosa") and key[:-6] in CATALOG_FIELDS:
+        field, grupo = CATALOG_FIELDS[key[:-6]]
+        return ColumnaCatalogo(F(field), _glosas_catalogo(grupo))
+    if key == "partida_glosa":
+        return ColumnaCatalogo(F("partida_arancelaria_codigo"), _glosas_partidas)
+    if key in ("dia", "mes", "anio"):
+        return ColumnaEntero({"dia": "fecha_date__day", "mes": "fecha_date__month", "anio": "fecha_date__year"}[key])
+    if key == "registro_incompleto":
+        return ColumnaTexto(Case(When(registro_incompleto=True, then=Value("Sí")), default=Value(""), output_field=TextField()))
+    if key == "tipos_bulto":
+        return ColumnaRelacion(_in_range(ExportacionBulto, desde, hasta), "tipo_bulto_codigo", _glosas_catalogo("tipos_bulto"))
+    if key == "total_bultos":
+        return ColumnaTotalBultos(desde, hasta)
+    if key in DOC_COLUMNS:
+        campo = {"documentos_transporte": "numero_documento", "naves": "nave", "viajes": "numero_viaje"}[key]
+        return ColumnaRelacion(_in_range(ExportacionDocTransporte, desde, hasta), campo)
+    if key in NUMERIC_COLUMNS or key == "item":
+        return ColumnaNumero(F(key))
+    if key == "fecha_text":
+        return ColumnaTexto(F(key), lista=False)
+    return ColumnaTexto(F(key))
+
+
+class ColumnaTotalBultos:
+    """Sum of the packages of each DUS: only known after reading the packages of the period."""
+
+    lista = False
+
+    def __init__(self, desde, hasta):
+        self.desde, self.hasta = desde, hasta
+
+    def filtrar(self, qs, nombre, filtro):
+        totales = _bultos_by_dus(self.desde, self.hasta, {})
+        return qs.filter(numero_ident__in=[key[2] for key, (total, _) in totales.items() if str(filtro) in str(total)])
+
+
+def consulta_exportaciones(parametros):
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    qs = filtered_exportaciones_informe(parametros.get("filtros", {}), desde=desde, hasta=hasta)
+    return aplicar_filtros_columnas(qs, parametros.get("filtros_columnas", {}), lambda key: columna_exportacion(key, parametros))
+
+
 def informe_exportaciones_rows(parametros, numeros=None):
     """(header, queryset, row function) for a stored report request; `numeros` limits the bultos and documents read."""
     columns = parametros["columnas"]
     desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
-    qs = filtered_exportaciones_informe(parametros.get("filtros", {}), desde=desde, hasta=hasta)
+    qs = consulta_exportaciones(parametros)
     catalogs = load_catalogs()
     bultos = _bultos_by_dus(desde, hasta, catalogs, numeros) if BULTO_COLUMNS.intersection(columns) else None
     docs = _docs_by_dus(desde, hasta, numeros) if DOC_COLUMNS.intersection(columns) else None
@@ -240,11 +297,6 @@ def totales_exportaciones(qs):
     return totales
 
 
-def consulta_exportaciones(parametros):
-    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
-    return filtered_exportaciones_informe(parametros["filtros"], desde=desde, hasta=hasta)
-
-
 def _valores_exportaciones(parametros, filas):
     _, _, valores = informe_exportaciones_rows(parametros, numeros={fila.numero_ident for fila in filas})
     return [valores(fila) for fila in filas]
@@ -253,7 +305,13 @@ def _valores_exportaciones(parametros, filas):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def vista_previa_exportaciones(request):
-    return vista_previa(request, EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, consulta_exportaciones, totales_exportaciones, _valores_exportaciones)
+    return vista_previa(request, EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, consulta_exportaciones, totales_exportaciones, _valores_exportaciones, columna_exportacion)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def valores_columna_exportaciones(request):
+    return valores_vista_previa(request, EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, consulta_exportaciones, columna_exportacion)
 
 
 @api_view(["POST"])

@@ -11,7 +11,10 @@ type Periodo = { anio: number; mes: number }
 type Rango = { desde: Periodo; hasta: Periodo }
 type Rubro = { id: number; nombre: string; configuracion_json: { columnas?: string[]; filtros?: Filters; periodo?: Rango } }
 type Totales = { cif_usd: number; fob_usd: number; cantidad: number; cantidades_por_unidad: { unidad: string; glosa: string; cantidad: number }[]; documentos: number; documentos_con_cif?: number }
-type VistaPrevia = { columnas: { key: string; label: string }[]; filas: (string | number)[][]; pagina: number; paginas: number; por_pagina: number; registros: number; totales: Totales | null; totales_omitidos: boolean }
+type ColumnaResultado = { key: string; label: string; filtro: 'lista' | 'texto' }
+type ValoresColumna = { valores: string[]; recortada: boolean; requiere_busqueda: boolean }
+type FiltrosColumna = Record<string, string | string[]>
+type VistaPrevia = { columnas: ColumnaResultado[]; filas: (string | number)[][]; pagina: number; paginas: number; por_pagina: number; registros: number; totales: Totales | null; totales_omitidos: boolean }
 type Solicitud = { columnas: string[]; filtros: Filters; periodo_desde: Periodo; periodo_hasta: Periodo }
 type Informe = { id: number; estado: 'PENDIENTE' | 'PROCESANDO' | 'LISTO' | 'ERROR'; filas_total: number; filas_procesadas: number; error: string; nombre_descarga: string }
 
@@ -49,6 +52,58 @@ function csrfToken() {
   return document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='))?.split('=')[1] ?? ''
 }
 
+/** Dropdown of the values a column has in the current query; they load when it opens and when searching. */
+function ColumnListFilter({ column, selected, disabled, load, onApply }: { column: ColumnaResultado; selected: string[]; disabled: boolean; load: (buscar: string) => Promise<ValoresColumna>; onApply: (values: string[]) => void }) {
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
+  const [buscar, setBuscar] = useState('')
+  const [data, setData] = useState<ValoresColumna | null>(null)
+  const [error, setError] = useState('')
+  const [marked, setMarked] = useState<string[]>(selected)
+  const lastLoad = useRef(0)
+  const panel = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!position) return
+    const run = ++lastLoad.current
+    setError('')
+    // Wait for a pause in the typing: each search reads the rows of the period.
+    const timer = window.setTimeout(() => {
+      load(buscar).then((result) => { if (run === lastLoad.current) setData(result) }).catch((reason: Error) => { if (run === lastLoad.current) setError(reason.message) })
+    }, buscar ? 350 : 0)
+    return () => window.clearTimeout(timer)
+  }, [position !== null, buscar])
+
+  useEffect(() => {
+    if (!position) return
+    const close = (event: MouseEvent) => { if (!panel.current?.contains(event.target as Node)) setPosition(null) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [position !== null])
+
+  function open(button: HTMLElement) {
+    const box = button.getBoundingClientRect()
+    setMarked(selected); setBuscar(''); setData(null)
+    setPosition({ top: Math.min(box.bottom + 4, window.innerHeight - 380), left: Math.min(box.left, window.innerWidth - 320) })
+  }
+  const shown = [...marked.filter((value) => !data?.valores.includes(value)), ...(data?.valores ?? [])]
+
+  return <>
+    <button type="button" className={`report-list-button${selected.length ? ' is-active' : ''}`} aria-label={`Filtrar ${column.label}`} aria-expanded={position !== null} disabled={disabled} onClick={(event) => open(event.currentTarget)}>{selected.length ? `${selected.length} elegido${selected.length > 1 ? 's' : ''}` : 'Todos'}<span aria-hidden="true">▾</span></button>
+    {position ? <div ref={panel} className="report-list-panel" style={position} role="dialog" aria-label={`Valores de ${column.label}`}>
+      <input autoFocus value={buscar} onChange={(event) => setBuscar(event.target.value)} placeholder="Buscar en la lista" />
+      <div className="report-list-options">
+        {shown.map((value) => <label key={value}><input type="checkbox" checked={marked.includes(value)} onChange={() => setMarked(marked.includes(value) ? marked.filter((item) => item !== value) : [...marked, value])} /><span>{value}</span></label>)}
+        {data && !shown.length && !data.requiere_busqueda ? <p>Sin valores.</p> : null}
+        {!data && !error ? <p>Cargando valores...</p> : null}
+      </div>
+      {error ? <p className="report-list-note">{error}</p> : null}
+      {data?.requiere_busqueda ? <p className="report-list-note">Hay demasiados registros para listar esta columna. Escribe para buscar o acota con otros filtros.</p> : null}
+      {data?.recortada ? <p className="report-list-note">Se muestran solo los primeros {data.valores.length} valores. Escribe para acotar la lista.</p> : null}
+      <footer><button type="button" className="link-button" onClick={() => setMarked([])}>Limpiar</button><button type="button" className="report-excel" onClick={() => { setPosition(null); onApply(marked) }}>Aplicar</button></footer>
+    </div> : null}
+  </>
+}
+
 function TermsFilter({ spec, values, onChange }: { spec: Extract<FilterSpec, { type: 'terms' }>; values: string[]; onChange: (values: string[]) => void }) {
   const [text, setText] = useState('')
   function add() {
@@ -84,7 +139,7 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0])
   const [columnDrafts, setColumnDrafts] = useState<Record<string, string>>({})
-  const [appliedColumnFilters, setAppliedColumnFilters] = useState<Record<string, string>>({})
+  const [appliedColumnFilters, setAppliedColumnFilters] = useState<FiltrosColumna>({})
   const previewRun = useRef(0)
 
   async function loadRubros() {
@@ -178,8 +233,21 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     } finally { if (run === previewRun.current) setLoadingPreview(false) }
   }
 
-  function applyColumnFilters(drafts = columnDrafts) {
-    const next = Object.fromEntries(Object.entries(drafts).map(([key, value]) => [key, value.trim()]).filter(([, value]) => value))
+  async function loadColumnValues(columna: string, buscar: string): Promise<ValoresColumna> {
+    const response = await fetch(`${base}/vista-previa/valores/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ ...solicitud, filtros_columnas: appliedColumnFilters, columna, buscar }) })
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail ?? `No se pudieron cargar los valores (${response.status}).`)
+    return response.json()
+  }
+
+  function applyListFilter(columna: string, values: string[]) {
+    const { [columna]: _previous, ...others } = appliedColumnFilters
+    if (values.length || _previous) void loadPreview(1, pageSize, values.length ? { ...others, [columna]: values } : others)
+  }
+
+  function applyColumnFilters() {
+    const lists = Object.entries(appliedColumnFilters).filter(([, value]) => Array.isArray(value))
+    const texts = Object.entries(columnDrafts).map(([key, value]) => [key, value.trim()]).filter(([, value]) => value)
+    const next: FiltrosColumna = Object.fromEntries([...lists, ...texts])
     const unchanged = JSON.stringify(next) === JSON.stringify(appliedColumnFilters)
     if (!unchanged && !loadingPreview) void loadPreview(1, pageSize, next)
   }
@@ -248,8 +316,8 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
         {preview.totales ? <><div><span>{documento}</span><strong>{count(preview.totales.documentos)}</strong></div><div><span>USD CIF</span><strong>{usd(preview.totales.cif_usd)}</strong></div><div><span>USD FOB</span><strong>{usd(preview.totales.fob_usd)}</strong></div><div><span>Cantidad</span>{preview.totales.cantidades_por_unidad.length ? preview.totales.cantidades_por_unidad.map((item) => <strong key={item.unidad} className="report-total-unit">{count(item.cantidad)} {item.glosa || item.unidad}</strong>) : <strong>0</strong>}</div></> : null}
       </div>
       {preview.totales_omitidos ? <p className="report-preview-note">Son demasiados registros para calcular los totales en línea. Acota el período o agrega filtros para verlos.</p> : <p className="report-preview-note">Los montos suman solo los ítems que cumplen los filtros, sin repetir los totales de cada {documento}.{kind === 'exportaciones' && preview.totales ? ` El DUS no trae CIF por ítem: se reparte según el FOB, y solo ${count(preview.totales.documentos_con_cif ?? 0)} de ${count(preview.totales.documentos)} DUS declaran CIF.` : ''} Las cantidades se muestran por unidad de medida porque no se pueden sumar entre sí.</p>}
-      <div className="report-preview-toolbar"><label>Mostrando <select value={pageSize} disabled={loadingPreview} onChange={(event) => void loadPreview(1, Number(event.target.value))}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select> registros por página</label>{columnFilters ? <small>Escribe en una columna y presiona Enter para filtrar.</small> : null}{Object.keys(appliedColumnFilters).length ? <button type="button" className="link-button" disabled={loadingPreview} onClick={() => { setColumnDrafts({}); applyColumnFilters({}) }}>Limpiar filtros</button> : null}{loadingPreview ? <small>Actualizando...</small> : null}</div>
-      <div className="table-wrap"><table className="uploads-table report-preview-table"><thead><tr>{preview.columnas.map((column) => <th key={column.key}>{column.label}</th>)}</tr>{columnFilters ? <tr className="report-column-filters">{preview.columnas.map((column) => <th key={column.key}><input aria-label={`Filtrar ${column.label}`} placeholder="Filtrar" value={columnDrafts[column.key] ?? ''} onChange={(event) => setColumnDrafts({ ...columnDrafts, [column.key]: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') applyColumnFilters() }} onBlur={() => applyColumnFilters()} /></th>)}</tr> : null}</thead><tbody>{preview.filas.length ? preview.filas.map((fila, index) => <tr key={index}>{fila.map((value, position) => <td key={preview.columnas[position].key}>{cell(value)}</td>)}</tr>) : <tr><td colSpan={preview.columnas.length}>No hay registros para estos filtros y período.</td></tr>}</tbody></table></div>
+      <div className="report-preview-toolbar"><label>Mostrando <select value={pageSize} disabled={loadingPreview} onChange={(event) => void loadPreview(1, Number(event.target.value))}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select> registros por página</label>{columnFilters ? <small>Elige valores en la lista de cada columna; en montos y fechas escribe y presiona Enter.</small> : null}{Object.keys(appliedColumnFilters).length ? <button type="button" className="link-button" disabled={loadingPreview} onClick={() => { setColumnDrafts({}); void loadPreview(1, pageSize, {}) }}>Limpiar filtros</button> : null}{loadingPreview ? <small>Actualizando...</small> : null}</div>
+      <div className="table-wrap"><table className="uploads-table report-preview-table"><thead><tr>{preview.columnas.map((column) => <th key={column.key}>{column.label}</th>)}</tr>{columnFilters ? <tr className="report-column-filters">{preview.columnas.map((column) => <th key={column.key}>{column.filtro === 'lista' ? <ColumnListFilter column={column} selected={Array.isArray(appliedColumnFilters[column.key]) ? appliedColumnFilters[column.key] as string[] : []} disabled={loadingPreview} load={(buscar) => loadColumnValues(column.key, buscar)} onApply={(values) => applyListFilter(column.key, values)} /> : <input aria-label={`Filtrar ${column.label}`} placeholder="Filtrar" value={columnDrafts[column.key] ?? ''} onChange={(event) => setColumnDrafts({ ...columnDrafts, [column.key]: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') applyColumnFilters() }} onBlur={() => applyColumnFilters()} />}</th>)}</tr> : null}</thead><tbody>{preview.filas.length ? preview.filas.map((fila, index) => <tr key={index}>{fila.map((value, position) => <td key={preview.columnas[position].key}>{cell(value)}</td>)}</tr>) : <tr><td colSpan={preview.columnas.length}>No hay registros para estos filtros y período.</td></tr>}</tbody></table></div>
       <div className="report-pager"><button type="button" disabled={loadingPreview || preview.pagina <= 1} onClick={() => void loadPreview(preview.pagina - 1)}>Anterior</button><span>Página {count(preview.pagina)} de {count(preview.paginas)}</span><button type="button" disabled={loadingPreview || preview.pagina >= preview.paginas} onClick={() => void loadPreview(preview.pagina + 1)}>Siguiente</button></div>
     </section></div> : null}
     {showRubroDialog ? <div className="modal-backdrop"><section className="modal"><h2>{editing ? 'Actualizar rubro' : 'Crear rubro'}</h2><label>Nombre<input value={rubroName} onChange={(event) => setRubroName(event.target.value)} autoFocus /></label><div><button type="button" onClick={saveRubro}>Guardar</button><button type="button" className="link-button" onClick={() => setShowRubroDialog(false)}>Cancelar</button></div></section></div> : null}

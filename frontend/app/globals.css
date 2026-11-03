@@ -1113,5 +1113,16 @@ h1 {
 .report-preview-table th, .report-preview-table td { white-space: nowrap; }
 .report-preview-table thead th { position: sticky; top: 0; z-index: 1; background: white; }
 .report-preview-table .report-column-filters th { top: 40px; padding: 6px 10px; }
-.report-column-filters input { width: 100%; min-width: 90px; padding: 6px 8px; border: 1px solid #d4e0ed; border-radius: 6px; background: #fbfdff; font: inherit; font-size: 12px; font-weight: 400; }
+.report-column-filters th > input { width: 100%; min-width: 90px; padding: 6px 8px; border: 1px solid #d4e0ed; border-radius: 6px; background: #fbfdff; font: inherit; font-size: 12px; font-weight: 400; }
 .report-pager { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 12px 22px; color: #425a73; font-size: 13px; }
+.report-list-button { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; min-width: 110px; padding: 6px 8px; border: 1px solid #d4e0ed; border-radius: 6px; background: #fbfdff; color: #425a73; font: inherit; font-size: 12px; font-weight: 400; cursor: pointer; }
+.report-list-button.is-active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.report-list-panel { position: fixed; z-index: 40; display: grid; gap: 8px; width: 300px; max-width: calc(100vw - 32px); padding: 10px; border: 1px solid #d4e0ed; border-radius: 8px; background: white; box-shadow: 0 12px 28px rgba(16, 32, 51, .22); color: #425a73; font-size: 13px; font-weight: 400; white-space: normal; }
+.report-list-panel > input { width: 100%; padding: 7px 8px; border: 1px solid #d4e0ed; border-radius: 6px; font: inherit; }
+.report-list-options { display: grid; align-content: start; gap: 2px; height: 220px; overflow: auto; }
+.report-list-options label { display: flex; align-items: flex-start; gap: 7px; padding: 4px 2px; overflow-wrap: anywhere; cursor: pointer; }
+.report-list-options input { flex: 0 0 auto; width: auto; margin: 2px 0 0; }
+.report-list-options span { flex: 1 1 auto; min-width: 0; text-align: left; }
+.report-list-options p { margin: 6px 2px; color: #718397; }
+.report-list-note { margin: 0; color: #8a5a00; font-size: 12px; }
+.report-list-panel footer { display: flex; justify-content: space-between; align-items: center; }

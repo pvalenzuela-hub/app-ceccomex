@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.busqueda import texto_producto_exportacion, texto_producto_importacion
-from comercio.models import ArchivoCarga, Exportacion, ExportacionBulto, Importacion
+from comercio.models import ArchivoCarga, Exportacion, ExportacionBulto, ExportacionDocTransporte, Importacion
 from reportes.models import ImportadorProbable, RubroImportacion
 from reportes.views import DIN_LABELS
 
@@ -229,7 +229,7 @@ class FiltrosColumnaImportacionesTests(VistaPreviaBase):
         self.assertEqual(self.idents(no_existe="x", numero_ident="  "), ["A", "A", "B"])
 
     def test_too_many_rows_for_a_computed_column_asks_to_narrow_the_search(self):
-        with patch("reportes.views.COLUMNA_MAX_FILAS_CALCULADAS", 1):
+        with patch("reportes.columnas.COLUMNA_MAX_FILAS_CALCULADAS", 1):
             response = self.post(IMPORT_URL, filtros_columnas={"iva_item": "1"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("Acote", response.json()["detail"])
@@ -304,3 +304,148 @@ class CodigosDinCorridosTests(VistaPreviaBase):
         data = self.post(IMPORT_URL, **marzo).json()
         self.assertEqual(data["totales"]["documentos"], 2)
         self.assertEqual(sorted(fila[0] for fila in data["filas"]), ["D1", "D1", "D2"])
+
+
+IMPORT_VALORES = IMPORT_URL + "valores/"
+EXPORT_VALORES = EXPORT_URL + "valores/"
+
+
+def excel_rows(test, url, **body):
+    with tempfile.TemporaryDirectory() as folder, patch("reportes.tasks.INFORMES_DIR", Path(folder)):
+        informe = test.post(url, **body).json()
+        test.assertEqual(informe["estado"], "LISTO", informe)
+        download = test.client.get(f"/api/reportes/informes/{informe['id']}/descargar/")
+        return list(load_workbook(io.BytesIO(b"".join(download.streaming_content)), read_only=True).active.iter_rows(values_only=True))[1:]
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"], CELERY_TASK_ALWAYS_EAGER=True)
+class ListasColumnaImportacionesTests(VistaPreviaBase):
+    MARCA = f"raw:{DIN_LABELS.index('DMARCA')}"
+    NOMBRE = f"raw:{DIN_LABELS.index('DNOMBRE')}"
+
+    @classmethod
+    def setUpTestData(cls):
+        source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="IMP")
+        common = {"archivo_origen": source, "periodo_anio": 2026, "periodo_mes": 2}
+        din = {"CIF": "1000", "FOB": "800", "CIF_ITEM": "500", "MEDIDA": "6"}
+        for numero, aduana, nombre, marca in (("A", "39", "TELEVISOR", "SONY-F"), ("B", "39", "RADIO", "SONY-F"), ("C", "48", "TELEVISOR", "LG-F")):
+            payload = din_payload(**din, NUMENCRIPTADO=numero, ADU=aduana, DNOMBRE=nombre, DMARCA=marca)
+            Importacion.objects.create(**common, numero_ident=numero, payload_json=payload, texto_producto=texto_producto_importacion(payload))
+        Importacion.objects.create(archivo_origen=source, periodo_anio=2026, periodo_mes=3, numero_ident="MARZO", payload_json=din_payload(ADU="55", DNOMBRE="OTRO MES", DMARCA="MARZO-F"))
+        CatalogoCodigo.objects.create(grupo="aduanas", codigo="39", glosa="SAN ANTONIO")
+        CatalogoCodigo.objects.create(grupo="aduanas", codigo="48", glosa="METROPOLITANA")
+        CatalogoCodigo.objects.create(grupo="aduanas", codigo="55", glosa="TALCAHUANO")
+
+    def valores(self, columna, **body):
+        response = self.post(IMPORT_VALORES, columna=columna, **body)
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_lists_come_from_the_period_and_the_other_filters(self):
+        self.assertEqual(self.valores("aduana_glosa")["valores"], ["METROPOLITANA", "SAN ANTONIO"])
+        self.assertEqual(self.valores(self.MARCA)["valores"], ["LG", "SONY"])
+        self.assertEqual(self.valores("numero_ident")["valores"], ["A", "B", "C"])
+        self.assertEqual(self.valores("aduana_glosa", filtros_columnas={self.MARCA: ["LG"]})["valores"], ["METROPOLITANA"])
+        self.assertEqual(self.valores(self.MARCA, filtros={"productos": ["radio"]})["valores"], ["SONY"])
+
+    def test_a_list_ignores_its_own_filter_so_other_values_can_be_added(self):
+        self.assertEqual(self.valores("aduana_glosa", filtros_columnas={"aduana_glosa": ["METROPOLITANA"]})["valores"], ["METROPOLITANA", "SAN ANTONIO"])
+
+    def test_lists_can_be_searched_and_warn_when_cut(self):
+        self.assertEqual(self.valores("aduana_glosa", buscar="metro")["valores"], ["METROPOLITANA"])
+        self.assertEqual(self.valores(self.MARCA, buscar="son")["valores"], ["SONY"])
+        cut = self.valores("numero_ident", limite=2)
+        self.assertEqual((cut["valores"], cut["recortada"]), (["A", "B"], True))
+        self.assertFalse(self.valores("numero_ident", limite=3)["recortada"])
+        self.assertTrue(self.valores("aduana_glosa", limite=1)["recortada"])
+
+    def test_computed_list_asks_to_search_when_there_are_too_many_rows(self):
+        with patch("reportes.columnas.COLUMNA_MAX_FILAS_CALCULADAS", 2):
+            self.assertTrue(self.valores(self.MARCA)["requiere_busqueda"])
+            found = self.valores(self.MARCA, buscar="LG")
+        self.assertEqual((found["valores"], found["requiere_busqueda"]), (["LG"], False))
+
+    def test_numeric_and_date_columns_have_no_list(self):
+        columnas = [self.MARCA, "aduana_glosa", "numero_ident", f"raw:{DIN_LABELS.index('CIF-ITEM')}", f"raw:{DIN_LABELS.index('FECACEP')}", "valor_fob", "periodo_mes"]
+        tipos = {column["key"]: column["filtro"] for column in self.post(IMPORT_URL, columnas=columnas).json()["columnas"]}
+        self.assertEqual([tipos[key] for key in columnas], ["lista", "lista", "lista", "texto", "texto", "texto", "texto"])
+        self.assertEqual(self.post(IMPORT_VALORES, columna="valor_fob").status_code, 400)
+        self.assertEqual(self.post(IMPORT_VALORES, columna="no_existe").status_code, 400)
+
+    def test_selected_values_match_exactly_on_screen_totals_and_excel(self):
+        filtros = {"aduana_glosa": ["SAN ANTONIO"], self.MARCA: ["SONY"], self.NOMBRE: ["RADIO", "TELEVISOR"]}
+        data = self.post(IMPORT_URL, filtros_columnas=filtros).json()
+        self.assertEqual(sorted(fila[0] for fila in data["filas"]), ["A", "B"])
+        self.assertEqual(data["totales"]["cif_usd"], 1000)
+        self.assertEqual(sorted(row[0] for row in excel_rows(self, "/api/reportes/importaciones/exportar/", filtros_columnas=filtros)), ["A", "B"])
+        # A selected value is the whole cell, not a fragment.
+        self.assertEqual(self.post(IMPORT_URL, filtros_columnas={self.MARCA: ["SON"]}).json()["registros"], 0)
+
+    def test_requires_session(self):
+        self.client.logout()
+        self.assertEqual(self.post(IMPORT_VALORES, columna="numero_ident").status_code, 403)
+        self.assertEqual(self.post(EXPORT_VALORES, columna="numero_ident").status_code, 403)
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"], CELERY_TASK_ALWAYS_EAGER=True)
+class ListasColumnaExportacionesTests(VistaPreviaBase):
+    @classmethod
+    def setUpTestData(cls):
+        source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="EXP")
+        common = {"archivo_origen": source, "periodo_anio": 2026, "periodo_mes": 2}
+        rows = (("D1", "218", "UVAS", "RED GLOBE", "100.50", "10"), ("D1", "218", "CEREZAS", "LAPINS", "300", "20"), ("D2", "225", "UVAS", "THOMPSON", "50", "5"))
+        for numero, pais, nombre, atributo, fob, cantidad in rows:
+            payload = {"dus_fields": {"NOMBRE": nombre, "ATRIBUTO1": atributo}}
+            Exportacion.objects.create(**common, numero_ident=numero, pais_destino_codigo=pais, glosa_mercancia=nombre, valor_fob=fob, cantidad_mercancia=cantidad, valor_fob_dus="450", exportador_codigo="7435", payload_json=payload, texto_producto=texto_producto_exportacion(payload))
+        Exportacion.objects.create(archivo_origen=source, periodo_anio=2026, periodo_mes=3, numero_ident="MARZO", pais_destino_codigo="336", glosa_mercancia="OTRO MES", payload_json={"dus_fields": {}})
+        bulto = {"archivo_origen": source, "periodo_anio": 2026, "periodo_mes": 2}
+        ExportacionBulto.objects.create(**bulto, numero_ident="D1", secuencia="1", cantidad_bultos="7", tipo_bulto_codigo="22")
+        ExportacionBulto.objects.create(**bulto, numero_ident="D2", secuencia="1", cantidad_bultos="3", tipo_bulto_codigo="78")
+        ExportacionDocTransporte.objects.create(**bulto, numero_ident="D2", secuencia="1", numero_documento="MAEU1", nave="POLAR ARGENTINA", numero_viaje="266103")
+        for grupo, codigo, texto in (("paises", "218", "ECUADOR"), ("paises", "225", "EE.UU."), ("paises", "336", "CHINA"), ("tipos_bulto", "22", "CAJA DE CARTON")):
+            CatalogoCodigo.objects.create(grupo=grupo, codigo=codigo, glosa=texto)
+
+    def valores(self, columna, **body):
+        response = self.post(EXPORT_VALORES, columna=columna, **body)
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def ids(self, **filtros):
+        return sorted(fila[0] for fila in self.post(EXPORT_URL, filtros_columnas=filtros).json()["filas"])
+
+    def test_lists_cover_catalogs_dus_fields_and_related_tables(self):
+        self.assertEqual(self.valores("pais_destino_glosa")["valores"], ["ECUADOR", "EE.UU."])
+        self.assertEqual(self.valores("glosa_mercancia")["valores"], ["CEREZAS", "UVAS"])
+        self.assertEqual(self.valores("dus:ATRIBUTO1", buscar="red")["valores"], ["RED GLOBE"])
+        self.assertEqual(self.valores("naves")["valores"], ["POLAR ARGENTINA"])
+        # A code without description shows the code, as the table does.
+        self.assertEqual(self.valores("tipos_bulto")["valores"], ["78", "CAJA DE CARTON"])
+        self.assertEqual(self.valores("pais_destino_glosa", filtros_columnas={"glosa_mercancia": ["CEREZAS"]})["valores"], ["ECUADOR"])
+        cut = self.valores("dus:ATRIBUTO1", limite=1)
+        self.assertEqual((cut["valores"], cut["recortada"]), (["LAPINS"], True))
+
+    def test_numeric_and_date_columns_have_no_list(self):
+        columnas = ["pais_destino_glosa", "valor_fob", "cantidad_mercancia", "fecha_text", "dia", "total_bultos", "dus:FECHAACEPT", "dus:FOBUS", "naves"]
+        tipos = {column["key"]: column["filtro"] for column in self.post(EXPORT_URL, columnas=columnas).json()["columnas"]}
+        self.assertEqual([tipos[key] for key in columnas], ["lista", "texto", "texto", "texto", "texto", "texto", "texto", "texto", "lista"])
+        self.assertEqual(self.post(EXPORT_VALORES, columna="valor_fob").status_code, 400)
+
+    def test_filters_of_every_kind_of_column(self):
+        self.assertEqual(self.ids(pais_destino_glosa=["EE.UU."]), ["D2"])
+        self.assertEqual(self.ids(glosa_mercancia=["UVAS"]), ["D1", "D2"])
+        self.assertEqual(self.ids(**{"dus:ATRIBUTO1": ["LAPINS"]}), ["D1"])
+        self.assertEqual(self.ids(naves=["POLAR ARGENTINA"]), ["D2"])
+        self.assertEqual(self.ids(tipos_bulto=["CAJA DE CARTON"]), ["D1", "D1"])
+        self.assertEqual(self.ids(valor_fob="100,5"), ["D1"])
+        self.assertEqual(self.ids(total_bultos="7"), ["D1", "D1"])
+
+    def test_totals_and_excel_match_the_filters_on_screen(self):
+        filtros = {"pais_destino_glosa": ["ECUADOR"], "glosa_mercancia": ["UVAS"]}
+        data = self.post(EXPORT_URL, filtros_columnas=filtros).json()
+        self.assertEqual((data["registros"], data["totales"]["fob_usd"]), (1, 100.5))
+        rows = excel_rows(self, "/api/reportes/exportaciones/exportar/", columnas=["numero_ident", "glosa_mercancia"], filtros_columnas=filtros)
+        self.assertEqual(rows, [("D1", "UVAS")])
+
+    def test_export_merchandise_is_not_replaced_by_an_import_alias(self):
+        columnas = [column["key"] for column in self.post(EXPORT_URL, columnas=["numero_ident", "glosa_mercancia"]).json()["columnas"]]
+        self.assertEqual(columnas, ["numero_ident", "glosa_mercancia"])

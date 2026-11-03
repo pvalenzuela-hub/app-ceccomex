@@ -1,7 +1,7 @@
 from django.urls import path
 
-from reportes.exportaciones import exportaciones_configuracion, exportar_informe_exportaciones, vista_previa_exportaciones
-from reportes.views import rubro_exportacion_detalle, rubros_exportaciones, detalle_reporte, informe_descargar, informe_estado, exportar_informe_importaciones, importadores_probables, importaciones_configuracion, partidas_importacion, perfiles_importadores, reportes, rubro_importacion_detalle, rubros_importaciones, vista_previa_importaciones
+from reportes.exportaciones import exportaciones_configuracion, exportar_informe_exportaciones, valores_columna_exportaciones, vista_previa_exportaciones
+from reportes.views import rubro_exportacion_detalle, rubros_exportaciones, detalle_reporte, informe_descargar, informe_estado, exportar_informe_importaciones, importadores_probables, importaciones_configuracion, partidas_importacion, perfiles_importadores, reportes, rubro_importacion_detalle, rubros_importaciones, valores_columna_importaciones, vista_previa_importaciones
 
 
 urlpatterns = [
@@ -13,6 +13,7 @@ urlpatterns = [
     path("importaciones/partidas/", partidas_importacion, name="informes-importaciones-partidas"),
     path("importaciones/exportar/", exportar_informe_importaciones, name="informes-importaciones-exportar"),
     path("importaciones/vista-previa/", vista_previa_importaciones, name="informes-importaciones-vista-previa"),
+    path("importaciones/vista-previa/valores/", valores_columna_importaciones, name="informes-importaciones-valores"),
     path("importaciones/rubros/", rubros_importaciones, name="informes-importaciones-rubros"),
     path("importaciones/rubros/<int:rubro_id>/", rubro_importacion_detalle, name="informes-importaciones-rubro"),
     path("informes/<int:informe_id>/", informe_estado, name="informe-estado"),
@@ -21,5 +22,6 @@ urlpatterns = [
     path("exportaciones/rubros/<int:rubro_id>/", rubro_exportacion_detalle, name="informes-exportaciones-rubro"),
     path("exportaciones/configuracion/", exportaciones_configuracion, name="informes-exportaciones-configuracion"),
     path("exportaciones/vista-previa/", vista_previa_exportaciones, name="informes-exportaciones-vista-previa"),
+    path("exportaciones/vista-previa/valores/", valores_columna_exportaciones, name="informes-exportaciones-valores"),
     path("exportaciones/exportar/", exportar_informe_exportaciones, name="informes-exportaciones-exportar"),
 ]
