@@ -228,15 +228,29 @@ def _period_range_q(desde, hasta):
     )
 
 
-# Rows loaded before the parser followed the official DIN positions keep other data in these fields, so the
-# code comes from the file line; the field is only a fallback for rows without it.
+# Rows loaded before the parser followed the official DIN positions keep other data in these fields, and the
+# current loader stores the importer number in numero_ident and the document type in item. So the value comes
+# from the file line; the field is only a fallback for rows without it.
 CODIGOS_DIN = {
-    "aduana_codigo": "ADU", "pais_origen_codigo": "PA_ORIG", "comuna_importador_codigo": "CODCOMUN",
-    "partida_arancelaria_codigo": "ARANC-NAC",
+    "numero_ident": "NUMENCRIPTADO", "item": "NUMITEM", "aduana_codigo": "ADU", "pais_origen_codigo": "PA_ORIG",
+    "comuna_importador_codigo": "CODCOMUN", "via_transporte_codigo": "VIA_TRAN", "partida_arancelaria_codigo": "ARANC-NAC",
 }
 
 
-def _codigo_din_sql(field):
+def valor_din(row, index):
+    """DIN position of a row, read from the MDB 2015 fields when it has them."""
+    legacy = row.payload_json.get("legacy_fields")
+    if legacy:
+        return legacy_value(legacy, LEGACY_DIN_BY_INDEX[index]) if index in LEGACY_DIN_BY_INDEX else ""
+    raw = row.payload_json.get("raw_columns", [])
+    return raw[index] if index < len(raw) else ""
+
+
+def codigo_din(row, field):
+    return valor_din(row, DIN_POSITIONS[CODIGOS_DIN[field]]) or getattr(row, field)
+
+
+def codigo_din_sql(field):
     label = CODIGOS_DIN[field]
     blank = Value("")
     sources = [KeyTextTransform(str(DIN_POSITIONS[label]), KeyTransform("raw_columns", "payload_json"))]
@@ -253,13 +267,10 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
         qs = qs.filter(periodo_anio=periodo_anio)
     if periodo_mes:
         qs = qs.filter(periodo_mes=periodo_mes)
-    via = _selected_values(filters.get("via_transporte_codigo", []))
-    if via:
-        qs = qs.filter(via_transporte_codigo__in=via)
     for field in CODIGOS_DIN:
         values = _selected_values(filters.get("partidas" if field == "partida_arancelaria_codigo" else field, []))
         if values:
-            qs = qs.alias(**{f"_{field}": _codigo_din_sql(field)}).filter(**{f"_{field}__in": values})
+            qs = qs.alias(**{f"_{field}": codigo_din_sql(field)}).filter(**{f"_{field}__in": values})
     paises_adquisicion = _selected_values(filters.get("pais_adquisicion_codigo", []))
     if paises_adquisicion:
         qs = qs.filter(
@@ -353,26 +364,20 @@ def _text_column_value(row, key, catalogos):
         return _derivados(row)["descripcion"][DESCRIPCION_COLUMNS[key]]
     if key in ("cantidad_observada", "unidad_observada"):
         return _derivados(row)[key]
-    raw = row.payload_json.get("raw_columns", [])
     def raw_value(index):
-        if legacy:
-            return legacy_value(legacy, LEGACY_DIN_BY_INDEX[index]) if index in LEGACY_DIN_BY_INDEX else ""
-        return raw[index] if index < len(raw) else ""
-
-    def codigo_din(field):
-        return raw_value(DIN_POSITIONS[CODIGOS_DIN[field]]) or getattr(row, field)
+        return valor_din(row, index)
 
     if key in CODIGOS_DIN:
-        return codigo_din(key)
+        return codigo_din(row, key)
     if key in GLOSA_COLUMNS:
         grupo, source = GLOSA_COLUMNS[key]
         if isinstance(source, int):
             codigo = raw_value(source)
         else:
-            codigo = codigo_din(source) if source in CODIGOS_DIN else getattr(row, source)
+            codigo = codigo_din(row, source) if source in CODIGOS_DIN else getattr(row, source)
         return catalogos.get(grupo, {}).get(str(codigo), "")
     if key == "partida_glosa":
-        return catalogos.get("partidas", {}).get(codigo_din("partida_arancelaria_codigo"), "")
+        return catalogos.get("partidas", {}).get(codigo_din(row, "partida_arancelaria_codigo"), "")
     if key == "iva_item":
         # IVA of the item: the OTRO1..OTRO4 tax group booked to account 178.
         total = None
@@ -544,7 +549,7 @@ def _filtrar_columna_sql(qs, nombre, key, term):
         buscado = normalizar(term)
         codigos = [codigo for codigo, glosa in glosas if buscado in normalizar(glosa)]
         if source in CODIGOS_DIN:
-            return qs.alias(**{nombre: _codigo_din_sql(source)}).filter(**{f"{nombre}__in": codigos})
+            return qs.alias(**{nombre: codigo_din_sql(source)}).filter(**{f"{nombre}__in": codigos})
         if isinstance(source, str):
             return qs.filter(**{f"{source}__in": codigos})
         return qs.alias(**{nombre: _din_texto_indice(source)}).filter(**{f"{nombre}__in": codigos})
@@ -557,7 +562,7 @@ def _filtrar_columna_sql(qs, nombre, key, term):
     if key in LEGACY_ONLY_COLUMNS:
         return _contiene(qs, nombre, KeyTextTransform(LEGACY_ONLY_COLUMNS[key][0], KeyTransform("legacy_fields", "payload_json")), term)
     if key in CODIGOS_DIN:
-        return _contiene(qs, nombre, _codigo_din_sql(key), term)
+        return _contiene(qs, nombre, codigo_din_sql(key), term)
     if key in ("periodo_anio", "periodo_mes"):
         # "1" must find January, not also October to December.
         return qs.filter(**{key: int(term)}) if term.isdigit() else qs.none()
@@ -684,7 +689,7 @@ def _monto(valor):
     return round(float(valor or 0), 2)
 
 
-def resumir_totales(qs, cif, fob, cantidad, unidad, grupo_unidad):
+def resumir_totales(qs, cif, fob, cantidad, unidad, grupo_unidad, documento=F("numero_ident")):
     """Totals of the filtered items, one pass per unit: quantities of different units do not add up."""
     filas = qs.order_by().annotate(_unidad=unidad).values("_unidad").annotate(_cif=Sum(cif), _fob=Sum(fob), _cantidad=Sum(cantidad))
     filas = list(filas)
@@ -698,7 +703,7 @@ def resumir_totales(qs, cif, fob, cantidad, unidad, grupo_unidad):
         "fob_usd": _monto(sum(fila["_fob"] or 0 for fila in filas)),
         "cantidad": round(sum(item["cantidad"] for item in por_unidad), 6),
         "cantidades_por_unidad": sorted(por_unidad, key=lambda item: -item["cantidad"]),
-        "documentos": qs.order_by().aggregate(total=Count("numero_ident", distinct=True))["total"],
+        "documentos": qs.order_by().aggregate(total=Count(documento, distinct=True))["total"],
     }
 
 
@@ -708,7 +713,7 @@ def totales_importaciones(qs):
     cif_item, cif, fob = (numero_sql(_din_texto(label)) for label in ("CIF-ITEM", "CIF", "FOB"))
     fob_item = Case(When(Q(_din_cif__isnull=False) & ~Q(_din_cif=0), then=F("_din_cif_item") * F("_din_fob") / F("_din_cif")), output_field=MONTO)
     qs = qs.annotate(_din_cif=cif, _din_fob=fob, _din_cif_item=cif_item)
-    return resumir_totales(qs, F("_din_cif_item"), fob_item, numero_sql(_din_texto("CANT-MERC")), _din_texto("MEDIDA"), "unidades_medida")
+    return resumir_totales(qs, F("_din_cif_item"), fob_item, numero_sql(_din_texto("CANT-MERC")), _din_texto("MEDIDA"), "unidades_medida", codigo_din_sql("numero_ident"))
 
 
 PREVIEW_PAGE_SIZE = 50

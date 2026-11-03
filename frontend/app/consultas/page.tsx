@@ -13,7 +13,7 @@ type Row = {
   pais_origen_codigo: string
   partida_arancelaria_codigo: string
   glosa_mercancia: string
-  valor_fob: string
+  valor_fob: string | number
   creado: string
   aduana?: { codigo: string; glosa: string; pendiente_revision?: boolean }
   comuna_importador?: { codigo: string; glosa: string; pendiente_revision?: boolean }
@@ -323,7 +323,7 @@ export default function ConsultasPage() {
                 <th>País código</th>
                 <th>País origen</th>
                 <th>Partida</th>
-                <th>FOB</th>
+                <th>FOB ítem</th>
               </tr>
             </thead>
             <tbody>
@@ -335,11 +335,11 @@ export default function ConsultasPage() {
                   <td>{row.fecha_text}</td>
                   <td>{row.aduana_codigo}</td>
                   <td>{row.aduana?.glosa || 'Sin glosa'}</td>
-                  <td>{row.comuna_importador_codigo || '—'}</td>
+                  <td>{row.comuna_importador?.glosa || row.comuna_importador_codigo || '—'}</td>
                   <td>{row.pais_origen_codigo}</td>
                   <td>{row.pais_origen?.glosa || 'Sin glosa'}</td>
                   <td>{row.partida?.glosa || row.partida_arancelaria_codigo}</td>
-                  <td>{row.valor_fob}</td>
+                  <td>{typeof row.valor_fob === 'number' ? row.valor_fob.toLocaleString('es-CL') : row.valor_fob}</td>
                 </tr>
               )) : (
                 <tr>

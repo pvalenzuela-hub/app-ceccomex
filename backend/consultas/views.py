@@ -1,10 +1,13 @@
+from functools import lru_cache
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.http import HttpResponse
-from django.db.models import Q
+from django.db.models import Q, TextField, Value
+from django.db.models.fields.json import KeyTextTransform, KeyTransform
+from django.db.models.functions import Coalesce, Concat, LPad, Substr
 from openpyxl import Workbook
 
-from comercio.descripcion import campos_descripcion
 from comercio.models import Importacion
 from consultas.serializers import ImportacionConsultaSerializer
 from consultas.serializers import ConsultaGuardadaSerializer
@@ -12,50 +15,52 @@ from consultas.resolvers import resolve_catalogo
 from consultas.resolvers import pendientes_importaciones
 from consultas.models import ConsultaGuardada
 from catalogos.models import PartidaArancelaria
-from reportes.views import to_number
+from reportes.views import DIN_POSITIONS, codigo_din_sql
+
+
+def _fecha_aceptacion_iso():
+    """FECACEP as YYYY-MM-DD, to compare with the date filters; the DIN keeps DDMMYYYY, without the leading zero in MDB."""
+    fecha = LPad(Coalesce(KeyTextTransform("FEC_ACE", KeyTransform("legacy_fields", "payload_json")), KeyTextTransform(str(DIN_POSITIONS["FECACEP"]), KeyTransform("raw_columns", "payload_json"))), 8, Value("0"))
+    return Concat(Substr(fecha, 5, 4), Value("-"), Substr(fecha, 3, 2), Value("-"), Substr(fecha, 1, 2), output_field=TextField())
+
+
+def _importaciones_filtradas(params):
+    qs = Importacion.objects.select_related("archivo_origen", "importador_probable_sugerido").order_by("-creado", "-id")
+    for field, value in (
+        ("numero_ident", params.get("numero_ident")),
+        ("aduana_codigo", params.get("aduana_codigo")),
+        ("comuna_importador_codigo", params.get("comuna_importador_codigo")),
+        ("partida_arancelaria_codigo", params.get("partida_arancelaria_codigo")),
+        ("pais_origen_codigo", params.get("pais_origen_codigo")),
+    ):
+        if value:
+            qs = qs.alias(**{f"_{field}": codigo_din_sql(field)}).filter(**{f"_{field}__icontains": value})
+    if params.get("periodo_anio"):
+        qs = qs.filter(periodo_anio=params.get("periodo_anio"))
+    if params.get("periodo_mes"):
+        qs = qs.filter(periodo_mes=params.get("periodo_mes"))
+    if params.get("periodo_mes_desde"):
+        qs = qs.filter(periodo_mes__gte=params.get("periodo_mes_desde"))
+    if params.get("periodo_mes_hasta"):
+        qs = qs.filter(periodo_mes__lte=params.get("periodo_mes_hasta"))
+    partida_busqueda = params.get("partida_busqueda")
+    if partida_busqueda:
+        codes = PartidaArancelaria.objects.filter(Q(codigo__icontains=partida_busqueda) | Q(glosa__icontains=partida_busqueda)).values_list("codigo", flat=True)
+        qs = qs.alias(_partida=codigo_din_sql("partida_arancelaria_codigo")).filter(_partida__in=codes)
+    if params.get("fecha_desde") or params.get("fecha_hasta"):
+        qs = qs.alias(_fecha=_fecha_aceptacion_iso())
+    if params.get("fecha_desde"):
+        qs = qs.filter(_fecha__gte=params.get("fecha_desde"))
+    if params.get("fecha_hasta"):
+        qs = qs.filter(_fecha__lte=params.get("fecha_hasta"))
+    return qs
 
 
 @api_view(["GET"])
 def importaciones(request):
-    qs = Importacion.objects.select_related("archivo_origen").order_by("-creado")
-    numero_ident = request.query_params.get("numero_ident")
-    periodo_anio = request.query_params.get("periodo_anio")
-    periodo_mes = request.query_params.get("periodo_mes")
-    aduana_codigo = request.query_params.get("aduana_codigo")
-    partida_arancelaria_codigo = request.query_params.get("partida_arancelaria_codigo")
-    pais_origen_codigo = request.query_params.get("pais_origen_codigo")
-    fecha_desde = request.query_params.get("fecha_desde")
-    fecha_hasta = request.query_params.get("fecha_hasta")
+    qs = _importaciones_filtradas(request.query_params)
     page = max(int(request.query_params.get("page", "1") or "1"), 1)
     page_size = min(max(int(request.query_params.get("page_size", "50") or "50"), 1), 100)
-    if numero_ident:
-        qs = qs.filter(numero_ident__icontains=numero_ident)
-    if periodo_anio:
-        qs = qs.filter(periodo_anio=periodo_anio)
-    if periodo_mes:
-        qs = qs.filter(periodo_mes=periodo_mes)
-    periodo_mes_desde = request.query_params.get("periodo_mes_desde")
-    periodo_mes_hasta = request.query_params.get("periodo_mes_hasta")
-    if periodo_mes_desde:
-        qs = qs.filter(periodo_mes__gte=periodo_mes_desde)
-    if periodo_mes_hasta:
-        qs = qs.filter(periodo_mes__lte=periodo_mes_hasta)
-    if aduana_codigo:
-        qs = qs.filter(aduana_codigo__icontains=aduana_codigo)
-    if request.query_params.get("comuna_importador_codigo"):
-        qs = qs.filter(comuna_importador_codigo__icontains=request.query_params.get("comuna_importador_codigo"))
-    if partida_arancelaria_codigo:
-        qs = qs.filter(partida_arancelaria_codigo__icontains=partida_arancelaria_codigo)
-    partida_busqueda = request.query_params.get("partida_busqueda")
-    if partida_busqueda:
-        codes = PartidaArancelaria.objects.filter(Q(codigo__icontains=partida_busqueda) | Q(glosa__icontains=partida_busqueda)).values_list("codigo", flat=True)
-        qs = qs.filter(partida_arancelaria_codigo__in=codes)
-    if pais_origen_codigo:
-        qs = qs.filter(pais_origen_codigo__icontains=pais_origen_codigo)
-    if fecha_desde:
-        qs = qs.filter(fecha_text__gte=fecha_desde)
-    if fecha_hasta:
-        qs = qs.filter(fecha_text__lte=fecha_hasta)
     total = qs.count()
     start = (page - 1) * page_size
     end = start + page_size
@@ -90,34 +95,7 @@ def favorito_detalle(request, favorito_id: int):
 
 @api_view(["GET"])
 def exportar_importaciones(request):
-    qs = Importacion.objects.select_related("archivo_origen").order_by("-creado")
-    numero_ident = request.query_params.get("numero_ident")
-    periodo_anio = request.query_params.get("periodo_anio")
-    periodo_mes = request.query_params.get("periodo_mes")
-    aduana_codigo = request.query_params.get("aduana_codigo")
-    partida_arancelaria_codigo = request.query_params.get("partida_arancelaria_codigo")
-    pais_origen_codigo = request.query_params.get("pais_origen_codigo")
-    fecha_desde = request.query_params.get("fecha_desde")
-    fecha_hasta = request.query_params.get("fecha_hasta")
-
-    if numero_ident:
-        qs = qs.filter(numero_ident__icontains=numero_ident)
-    if periodo_anio:
-        qs = qs.filter(periodo_anio=periodo_anio)
-    if periodo_mes:
-        qs = qs.filter(periodo_mes=periodo_mes)
-    if aduana_codigo:
-        qs = qs.filter(aduana_codigo__icontains=aduana_codigo)
-    if request.query_params.get("comuna_importador_codigo"):
-        qs = qs.filter(comuna_importador_codigo__icontains=request.query_params.get("comuna_importador_codigo"))
-    if partida_arancelaria_codigo:
-        qs = qs.filter(partida_arancelaria_codigo__icontains=partida_arancelaria_codigo)
-    if pais_origen_codigo:
-        qs = qs.filter(pais_origen_codigo__icontains=pais_origen_codigo)
-    if fecha_desde:
-        qs = qs.filter(fecha_text__gte=fecha_desde)
-    if fecha_hasta:
-        qs = qs.filter(fecha_text__lte=fecha_hasta)
+    qs = _importaciones_filtradas(request.query_params)
 
     workbook = Workbook(write_only=True)
     sheet = workbook.create_sheet(title="Consultas")
@@ -141,29 +119,26 @@ def exportar_importaciones(request):
         "creado",
     ])
 
-    resolver = resolve_catalogo
+    resolver = lru_cache(maxsize=None)(resolve_catalogo)
     for item in qs:
-        aduana = resolver("aduanas", item.aduana_codigo)
-        comuna = resolver("comunas", item.comuna_importador_codigo)
-        pais = resolver("paises", item.pais_origen_codigo)
-        partida = resolver("partidas", item.partida_arancelaria_codigo)
+        fila = ImportacionConsultaSerializer(context={"resolver": resolver}).to_representation(item)
         sheet.append([
-            item.numero_ident,
-            item.item,
-            item.fecha_text,
-            item.aduana_codigo,
-            aduana.get("glosa", ""),
-            item.comuna_importador_codigo,
-            comuna.get("glosa", ""),
-            item.pais_origen_codigo,
-            pais.get("glosa", ""),
-            item.partida_arancelaria_codigo,
-            partida.get("glosa", ""),
-            campos_descripcion(item.payload_json)["descripcion"][0],
-            to_number(item.valor_fob),
-            to_number(item.valor_flete),
-            to_number(item.valor_seguro),
-            to_number(item.valor_cif),
+            fila["numero_ident"],
+            fila["item"],
+            fila["fecha_text"],
+            fila["aduana_codigo"],
+            fila["aduana"].get("glosa", ""),
+            fila["comuna_importador_codigo"],
+            fila["comuna_importador"].get("glosa", ""),
+            fila["pais_origen_codigo"],
+            fila["pais_origen"].get("glosa", ""),
+            fila["partida_arancelaria_codigo"],
+            fila["partida"].get("glosa", ""),
+            fila["glosa_mercancia"],
+            fila["valor_fob"],
+            fila["valor_flete"],
+            fila["valor_seguro"],
+            fila["valor_cif"],
             item.creado.isoformat(),
         ])
 

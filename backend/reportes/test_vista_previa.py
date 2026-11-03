@@ -294,3 +294,13 @@ class CodigosDinCorridosTests(VistaPreviaBase):
         self.assertEqual(idents(filtros_columnas={"partida_arancelaria_codigo": "3919"}), ["VIEJA"])
         self.assertEqual(idents(filtros_columnas={"partida_glosa": "laminas"}), ["VIEJA"])
         self.assertEqual(idents(filtros_columnas={"comuna_importador_glosa": "cerrillos"}), ["VIEJA"])
+
+    def test_documents_are_din_numbers_not_importers(self):
+        common = {"archivo_origen": ArchivoCarga.objects.first(), "periodo_anio": 2026, "periodo_mes": 3}
+        # The current loader stores the importer number in numero_ident: two DIN of the same importer.
+        for din in ("D1", "D1", "D2"):
+            Importacion.objects.create(**common, numero_ident="3693", payload_json=din_payload(NUMENCRIPTADO=din))
+        marzo = {"periodo_desde": {"anio": 2026, "mes": 3}, "periodo_hasta": {"anio": 2026, "mes": 3}}
+        data = self.post(IMPORT_URL, **marzo).json()
+        self.assertEqual(data["totales"]["documentos"], 2)
+        self.assertEqual(sorted(fila[0] for fila in data["filas"]), ["D1", "D1", "D2"])
