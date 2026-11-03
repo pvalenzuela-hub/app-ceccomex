@@ -80,7 +80,7 @@ export default function DashboardPage() {
 
       const refreshUploads = async () => {
         try {
-          const res = await fetch(`${apiBaseUrl}/api/comercio/archivos/`, { cache: 'no-store' })
+          const res = await fetch(`${apiBaseUrl}/api/comercio/archivos/`, { cache: 'no-store', credentials: 'include' })
           if (!res.ok) return
           const data = await res.json()
           const nextUploads = Array.isArray(data) ? data : []
@@ -99,7 +99,7 @@ export default function DashboardPage() {
         }
       }
 
-      fetch(`${apiBaseUrl}/api/core/metrics/`, { cache: 'no-store' })
+      fetch(`${apiBaseUrl}/api/core/metrics/`, { cache: 'no-store', credentials: 'include' })
         .then(async (res) => {
           if (!res.ok) return
           const data = await res.json()
@@ -123,7 +123,7 @@ export default function DashboardPage() {
     setSelectedUploadId(archivoId)
     setStagingLabel(`Staging de carga #${archivoId}`)
     try {
-      const response = await fetch(`${apiBaseUrl}/api/comercio/archivos/${archivoId}/staging/`, { cache: 'no-store' })
+      const response = await fetch(`${apiBaseUrl}/api/comercio/archivos/${archivoId}/staging/`, { cache: 'no-store', credentials: 'include' })
       if (!response.ok) return
       const data = await response.json()
       setStagingRows(Array.isArray(data) ? data : [])
@@ -184,7 +184,7 @@ export default function DashboardPage() {
       setSelectedUploadId(data.id)
       form.reset()
 
-      const listResponse = await fetch(`${apiBaseUrl}/api/comercio/archivos/`, { cache: 'no-store' })
+      const listResponse = await fetch(`${apiBaseUrl}/api/comercio/archivos/`, { cache: 'no-store', credentials: 'include' })
       if (listResponse.ok) {
         const listData = await listResponse.json()
         setUploads(Array.isArray(listData) ? listData : [])

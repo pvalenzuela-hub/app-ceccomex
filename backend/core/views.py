@@ -1,4 +1,5 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.utils import timezone
@@ -11,12 +12,14 @@ from core.models import PresenciaUsuario
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 @ensure_csrf_cookie
 def health_check(request):
     return Response({"status": "ok", "service": "cec-comex-backend"})
 
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def login_check(request):
     username = request.data.get("username", "")
     password = request.data.get("password", "")
@@ -36,8 +39,6 @@ def logout_view(request):
 
 @api_view(["GET"])
 def session_user(request):
-    if not request.user.is_authenticated:
-        return Response({"detail": "Sesión no iniciada."}, status=401)
     user = request.user
     return Response({"username": user.username, "email": user.email, "is_staff": user.is_staff, "is_superuser": user.is_superuser})
 
@@ -50,8 +51,6 @@ def _registrar_presencia(request):
 
 @api_view(["POST"])
 def presencia(request):
-    if not request.user.is_authenticated:
-        return Response({"detail": "Sesión no iniciada."}, status=401)
     _registrar_presencia(request)
     return Response({"ok": True})
 

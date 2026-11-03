@@ -83,7 +83,7 @@ export default function ConsultasExportacionesPage() {
   async function suggestPartidas(value: string) {
     setPartidaText(value)
     if (value.trim().length < 2) return setPartidaOptions([])
-    const response = await fetch(`${api}/api/reportes/importaciones/partidas/?q=${encodeURIComponent(value)}`)
+    const response = await fetch(`${api}/api/reportes/importaciones/partidas/?q=${encodeURIComponent(value)}`, { credentials: 'include' })
     if (response.ok) setPartidaOptions(await response.json())
   }
 
