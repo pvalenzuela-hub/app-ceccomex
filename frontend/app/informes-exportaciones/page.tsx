@@ -4,7 +4,7 @@ import ReportBuilder, { FilterSpec } from '../components/report-builder'
 
 const universe: FilterSpec[] = [
   { type: 'partidas', key: 'partidas' },
-  { type: 'terms', key: 'exportadores', label: 'Exportador', placeholder: 'Nº único del exportador — Enter para agregar', help: 'El DUS identifica al exportador con un número único anónimo (no RUT); lo ves en Búsqueda DUS.' },
+  { type: 'terms', key: 'exportadores', label: 'Exportador', placeholder: 'Nº único del exportador — Enter para agregar', help: 'El DUS identifica al exportador con un número único anónimo (no RUT).' },
   { type: 'terms', key: 'marcas', label: 'Marca', placeholder: 'Ej. RED GLOBE — Enter para agregar', help: 'Busca en Mercadería y Variedades 1 a 6 del DUS. Varios términos suman resultados.' },
   { type: 'terms', key: 'productos', label: 'Producto', placeholder: 'Ej. cerezas — Enter para agregar', help: 'Busca en Mercadería y Variedades 1 a 6 del DUS. Varios términos suman resultados.' },
 ]

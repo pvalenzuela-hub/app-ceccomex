@@ -36,9 +36,7 @@ export default function TopNav() {
       <p className="nav-brand">CEC COMEX</p>
       <div className="nav-links">
         <Link href="/dashboard">Dashboard</Link>
-        <Link href="/consultas">Búsqueda DIN</Link>
         <Link href="/informes-importaciones">Consulta de Importaciones</Link>
-        <Link href="/consultas-exportaciones">Búsqueda DUS</Link>
         <Link href="/informes-exportaciones">Consulta de Exportaciones</Link>
         <Link href="/catalogos">Catálogos</Link>
         <Link href="/reportes">Reportes</Link>
