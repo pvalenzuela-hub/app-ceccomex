@@ -1,6 +1,6 @@
 import math
 
-from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
+from django.db.models import Case, Count, DecimalField, F, Q, Sum, TextField, Value, When
 from django.db.models.fields.json import KeyTextTransform, KeyTransform
 from django.db.models.functions import Cast, Coalesce, Replace
 from django.db.models.lookups import Regex
@@ -477,11 +477,104 @@ IMPORT_CATALOG_GROUPS = (
 )
 
 
+def consulta_importaciones(parametros):
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    qs = _filtered_importaciones(parametros.get("filtros", {}), desde=desde, hasta=hasta)
+    return filtrar_columnas_importaciones(qs, parametros.get("filtros_columnas", {}))
+
+
+# Columns computed in Python from payload_json, with no SQL equivalent.
+COLUMNAS_CALCULADAS = {*ITEM_COLUMNS, *DESCRIPCION_COLUMNS, "cantidad_observada", "unidad_observada", "iva_item"}
+# A column filter reads this many rows in Python at most, about the time of the totals of a full month.
+COLUMNA_MAX_FILAS_CALCULADAS = 50_000
+
+
+def _din_texto_indice(index):
+    raw = KeyTextTransform(str(index), KeyTransform("raw_columns", "payload_json"))
+    if index in LEGACY_DIN_BY_INDEX:
+        return Coalesce(KeyTextTransform(LEGACY_DIN_BY_INDEX[index], KeyTransform("legacy_fields", "payload_json")), raw)
+    return raw
+
+
+def _contiene(qs, nombre, expression, term):
+    """Rows whose text holds the term, as typed or without accents: customs text rarely has them."""
+    match = Q(**{f"{nombre}__icontains": term}) | Q(**{f"{nombre}__icontains": normalizar(term)})
+    return qs.alias(**{nombre: expression}).filter(match)
+
+
+def _texto_numero(term):
+    """Decimal comma or point alike; ",07" has no leading zero in the DIN TXT."""
+    term = term.replace(",", ".")
+    return term[1:] if term.startswith("0.") else term
+
+
+def _filtrar_columna_sql(qs, nombre, key, term):
+    if key in GLOSA_COLUMNS or key == "partida_glosa":
+        if key == "partida_glosa":
+            grupo, source = None, "partida_arancelaria_codigo"
+            glosas = PartidaArancelaria.objects.values_list("codigo", "glosa")
+        else:
+            grupo, source = GLOSA_COLUMNS[key]
+            glosas = CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa")
+        buscado = normalizar(term)
+        codigos = [codigo for codigo, glosa in glosas if buscado in normalizar(glosa)]
+        if isinstance(source, str):
+            return qs.filter(**{f"{source}__in": codigos})
+        return qs.alias(**{nombre: _din_texto_indice(source)}).filter(**{f"{nombre}__in": codigos})
+    if key == "importador_probable":
+        legacy = KeyTextTransform("IMPORT", KeyTransform("legacy_fields", "payload_json"))
+        return qs.alias(**{nombre: Coalesce("importador_probable_sugerido__nombre", legacy, output_field=TextField())}).filter(**{f"{nombre}__icontains": term})
+    if key == "importador_rut":
+        legacy = KeyTextTransform("RUT", KeyTransform("legacy_fields", "payload_json"))
+        return _contiene(qs, nombre, Coalesce(legacy, _din_texto_indice(DIN_POSITIONS["NUM_UNICO_IMPORTADOR"])), term)
+    if key in LEGACY_ONLY_COLUMNS:
+        return _contiene(qs, nombre, KeyTextTransform(LEGACY_ONLY_COLUMNS[key][0], KeyTransform("legacy_fields", "payload_json")), term)
+    if key in ("periodo_anio", "periodo_mes"):
+        # "1" must find January, not also October to December.
+        return qs.filter(**{key: int(term)}) if term.isdigit() else qs.none()
+    if key.startswith("raw:"):
+        text = _din_texto_indice(int(key.split(":", 1)[1]))
+        if key in AMOUNT_COLUMNS:
+            return qs.alias(**{nombre: Replace(text, Value(","), Value("."), output_field=TextField())}).filter(**{f"{nombre}__icontains": _texto_numero(term)})
+        return _contiene(qs, nombre, text, term)
+    return _contiene(qs, nombre, F(key), term)
+
+
+def _texto_celda(value):
+    """A value as the table shows it: decimal comma and no trailing ".0"."""
+    if isinstance(value, float):
+        return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", ",")
+    return normalizar(value)
+
+
+def filtrar_columnas_importaciones(qs, filtros_columnas):
+    """Rows where each column holds its text. SQL first; computed columns are then read in Python over what is left."""
+    calculadas = {}
+    for position, (key, term) in enumerate(filtros_columnas.items()):
+        if key not in COLUMNAS_CALCULADAS:
+            qs = _filtrar_columna_sql(qs, f"_columna_{position}", key, term)
+            continue
+        calculadas[key] = normalizar(term)
+        if key in DESCRIPCION_COLUMNS:
+            # Every word of these columns is inside the trigram-indexed product text.
+            for word in calculadas[key].split():
+                qs = qs.filter(texto_producto__contains=word)
+    if not calculadas:
+        return qs
+    if qs.count() > COLUMNA_MAX_FILAS_CALCULADAS:
+        nombres = ", ".join(IMPORT_COLUMN_MAP[key] for key in calculadas)
+        raise ValueError(f"Hay demasiados registros para filtrar por {nombres}. Acote el período o agregue otros filtros.")
+    ids = [
+        row.id for row in qs.order_by().select_related(None).iterator(chunk_size=2000)
+        if all(term in _texto_celda(_column_value(row, key, {})) for key, term in calculadas.items())
+    ]
+    return qs.filter(id__in=ids)
+
+
 def informe_importaciones_rows(parametros):
     """(header, queryset, row function) for a stored report request; shared by the Celery task."""
     columns = parametros["columnas"]
-    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
-    qs = _filtered_importaciones(parametros.get("filtros", {}), desde=desde, hasta=hasta)
+    qs = consulta_importaciones(parametros)
     catalogos = {grupo: dict(CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa")) for grupo in IMPORT_CATALOG_GROUPS}
     if "partida_glosa" in columns:
         catalogos["partidas"] = dict(PartidaArancelaria.objects.values_list("codigo", "glosa"))
@@ -512,8 +605,12 @@ def _parametros_informe(request, column_map, default_columns):
     filtros = request.data.get("filtros", {})
     if not isinstance(filtros, dict):
         raise ParseError("Filtros no válidos.")
+    filtros_columnas = request.data.get("filtros_columnas", {})
+    if not isinstance(filtros_columnas, dict):
+        raise ParseError("Filtros no válidos.")
+    filtros_columnas = {key: str(value).strip()[:200] for key, value in filtros_columnas.items() if key in column_map and str(value).strip()}
     return {
-        "columnas": columns, "filtros": filtros,
+        "columnas": columns, "filtros": filtros, "filtros_columnas": filtros_columnas,
         "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]},
     }
 
@@ -592,11 +689,13 @@ PREVIEW_MAX_PAGE_SIZE = 200
 PREVIEW_MAX_TOTAL_ROWS = 2_000_000
 
 
-def vista_previa(request, column_map, default_columns, filtrar, totales, valores):
+def vista_previa(request, column_map, default_columns, consulta, totales, valores):
     """One page of the report rows; `totales: false` skips the totals when only the page changes."""
     parametros = _parametros_informe(request, column_map, default_columns)
-    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
-    qs = filtrar(parametros["filtros"], desde=desde, hasta=hasta)
+    try:
+        qs = consulta(parametros)
+    except ValueError as error:
+        raise ParseError(str(error))
     try:
         por_pagina = min(max(int(request.data.get("por_pagina", PREVIEW_PAGE_SIZE)), 1), PREVIEW_MAX_PAGE_SIZE)
     except (TypeError, ValueError):
@@ -621,7 +720,7 @@ def _valores_importaciones(parametros, filas):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def vista_previa_importaciones(request):
-    return vista_previa(request, IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, _filtered_importaciones, totales_importaciones, _valores_importaciones)
+    return vista_previa(request, IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, consulta_importaciones, totales_importaciones, _valores_importaciones)
 
 
 @api_view(["POST"])

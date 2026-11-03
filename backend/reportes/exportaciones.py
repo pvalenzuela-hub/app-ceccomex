@@ -240,6 +240,11 @@ def totales_exportaciones(qs):
     return totales
 
 
+def consulta_exportaciones(parametros):
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    return filtered_exportaciones_informe(parametros["filtros"], desde=desde, hasta=hasta)
+
+
 def _valores_exportaciones(parametros, filas):
     _, _, valores = informe_exportaciones_rows(parametros, numeros={fila.numero_ident for fila in filas})
     return [valores(fila) for fila in filas]
@@ -248,7 +253,7 @@ def _valores_exportaciones(parametros, filas):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def vista_previa_exportaciones(request):
-    return vista_previa(request, EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, filtered_exportaciones_informe, totales_exportaciones, _valores_exportaciones)
+    return vista_previa(request, EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, consulta_exportaciones, totales_exportaciones, _valores_exportaciones)
 
 
 @api_view(["POST"])

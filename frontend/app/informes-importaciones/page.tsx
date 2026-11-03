@@ -36,5 +36,5 @@ const rubroFilters: FilterSpec[] = [
 ]
 
 export default function InformesImportacionesPage() {
-  return <ReportBuilder kind="importaciones" title="Consulta de Importaciones" lead="Define los datos de salida y limita el universo, revisa los resultados en pantalla y luego genera tu archivo Excel." columnSearchPlaceholder="Buscar campo DIN, código o descripción" universe={universe} rubroFilters={rubroFilters} />
+  return <ReportBuilder kind="importaciones" title="Consulta de Importaciones" lead="Define los datos de salida y limita el universo para ver los resultados en pantalla. Desde ahí puedes filtrar por columna y, si lo necesitas, descargar un Excel." columnSearchPlaceholder="Buscar campo DIN, código o descripción" universe={universe} rubroFilters={rubroFilters} columnFilters />
 }

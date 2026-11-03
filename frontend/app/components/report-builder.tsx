@@ -31,6 +31,8 @@ export type ReportBuilderProps = {
   universe: FilterSpec[]
   /** Filters outside the universe: only shown when a saved rubro uses them, so they can be seen and removed. */
   rubroFilters: FilterSpec[]
+  /** Text filter on every column of the results. */
+  columnFilters?: boolean
 }
 
 const MONTHS = Array.from({ length: 12 }, (_, index) => new Date(2026, index).toLocaleString('es-CL', { month: 'long' }))
@@ -39,6 +41,7 @@ const periodLabel = (periodo: Periodo) => `${MONTHS[periodo.mes - 1]} ${periodo.
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const usd = (value: number) => `US$ ${value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const count = (value: number) => value.toLocaleString('es-CL')
+const PAGE_SIZES = [10, 25, 50, 100, 200]
 const cell = (value: string | number) => typeof value === 'number' ? value.toLocaleString('es-CL', { useGrouping: false, maximumFractionDigits: 6 }) : value
 const toOptions = (items: Catalog[] = []): Option[] => items.map((item) => ({ value: item.codigo, label: item.glosa }))
 
@@ -56,7 +59,7 @@ function TermsFilter({ spec, values, onChange }: { spec: Extract<FilterSpec, { t
   return <div className="searchable-select product-terms"><label className="tariff-search"><span>{spec.label}{values.length ? ` (${values.length})` : ''}</span><div className="term-input"><input value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} placeholder={spec.placeholder} /><button type="button" onClick={add}>Agregar</button></div><small>{spec.help}</small></label>{values.length ? <div className="selected-values">{values.map((term) => <button key={term} type="button" onClick={() => onChange(values.filter((item) => item !== term))}>{term} ×</button>)}</div> : null}</div>
 }
 
-export default function ReportBuilder({ kind, title, lead, columnSearchPlaceholder, universe, rubroFilters }: ReportBuilderProps) {
+export default function ReportBuilder({ kind, title, lead, columnSearchPlaceholder, universe, rubroFilters, columnFilters = false }: ReportBuilderProps) {
   const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
   const base = `${api}/api/reportes/${kind}`
   const [columns, setColumns] = useState<Column[]>([])
@@ -79,6 +82,9 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
   const [preview, setPreview] = useState<VistaPrevia | null>(null)
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0])
+  const [columnDrafts, setColumnDrafts] = useState<Record<string, string>>({})
+  const [appliedColumnFilters, setAppliedColumnFilters] = useState<Record<string, string>>({})
   const previewRun = useRef(0)
 
   async function loadRubros() {
@@ -101,8 +107,13 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     void loadRubros()
   }, [])
 
-  // The Excel must match what is on screen: changing the query discards the preview and any response in flight.
-  useEffect(() => { previewRun.current += 1; setPreview(null); setSolicitud(null); setLoadingPreview(false) }, [selected, filters, rango])
+  function closePreview() {
+    previewRun.current += 1
+    setPreview(null); setSolicitud(null); setLoadingPreview(false); setColumnDrafts({}); setAppliedColumnFilters({})
+  }
+
+  // The Excel must match what is on screen: changing the query discards the results and any response in flight.
+  useEffect(closePreview, [selected, filters, rango])
 
   function setFilter(name: string, values: string[]) { setFilters({ ...filters, [name]: values }) }
   function toggleColumn(key: string) { setSelected(selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key]) }
@@ -147,7 +158,7 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     setRango({ ...rango, [part]: { ...rango[part], [field]: Number(value) } })
   }
 
-  async function loadPreview(pagina: number) {
+  async function loadPreview(pagina: number, porPagina = pageSize, filtrosColumnas = appliedColumnFilters) {
     if (periodKey(rango.desde) > periodKey(rango.hasta)) return setMessage('El período desde no puede ser posterior al período hasta.')
     // Keep the catalog order of columns.
     const request: Solicitud = solicitud ?? { columnas: columns.map((column) => column.key).filter((key) => selected.includes(key)), filtros: filters, periodo_desde: rango.desde, periodo_hasta: rango.hasta }
@@ -155,16 +166,22 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     setLoadingPreview(true); setMessage('')
     try {
       await fetch(`${api}/api/health/`, { credentials: 'include' })
-      // Totals are the slow part and do not change between pages.
-      const totales = !preview || !solicitud
-      const response = await fetch(`${base}/vista-previa/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ ...request, pagina, totales }) })
+      // Totals are the slow part and only change with the filters, not with the page.
+      const totales = !preview || !solicitud || filtrosColumnas !== appliedColumnFilters
+      const response = await fetch(`${base}/vista-previa/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ ...request, filtros_columnas: filtrosColumnas, pagina, por_pagina: porPagina, totales }) })
       if (run !== previewRun.current) return
       if (!response.ok) return setMessage((await response.json().catch(() => null))?.detail ?? `No se pudieron cargar los resultados (${response.status}).`)
       const data: VistaPrevia = await response.json()
       if (run !== previewRun.current) return
-      setSolicitud(request)
+      setSolicitud(request); setPageSize(porPagina); setAppliedColumnFilters(filtrosColumnas)
       setPreview(totales ? data : { ...data, totales: preview?.totales ?? null })
     } finally { if (run === previewRun.current) setLoadingPreview(false) }
+  }
+
+  function applyColumnFilters(drafts = columnDrafts) {
+    const next = Object.fromEntries(Object.entries(drafts).map(([key, value]) => [key, value.trim()]).filter(([, value]) => value))
+    const unchanged = JSON.stringify(next) === JSON.stringify(appliedColumnFilters)
+    if (!unchanged && !loadingPreview) void loadPreview(1, pageSize, next)
   }
 
   async function execute() {
@@ -172,7 +189,7 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     setGenerating(true); setMessage(''); setProgress('Enviando solicitud...')
     try {
       await fetch(`${api}/api/health/`, { credentials: 'include' })
-      const response = await fetch(`${base}/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify(solicitud) })
+      const response = await fetch(`${base}/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ ...solicitud, filtros_columnas: appliedColumnFilters }) })
       if (!response.ok) return setMessage((await response.json().catch(() => null))?.detail ?? `No se pudo generar el Excel (${response.status}).`)
       let informe: Informe = await response.json()
       // Reports are generated by the background worker; poll until the file is ready.
@@ -216,21 +233,25 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     <section className="panel report-rubros"><div><p className="eyebrow">Configuraciones</p><h2>Rubros guardados</h2></div><select defaultValue="" onChange={(event) => { const rubro = rubros.find((item) => item.id === Number(event.target.value)); if (rubro) recover(rubro) }}><option value="">Seleccionar una configuración</option>{rubros.map((rubro) => <option key={rubro.id} value={rubro.id}>{rubro.nombre}</option>)}</select><button type="button" onClick={() => { setEditing(null); setRubroName(''); setShowRubroDialog(true) }}>Crear rubro</button>{editing ? <button type="button" onClick={() => { setRubroName(editing.nombre); setShowRubroDialog(true) }}>Actualizar</button> : null}{editing ? <button type="button" className="link-button" onClick={() => deleteRubro(editing)}>Eliminar</button> : null}</section>
     {message ? <p className="login-message">{message}</p> : null}
     <section className="report-layout report-workspace">
-      <section className="panel report-columns-panel"><header><div><span className="report-step">01</span><p className="eyebrow">Salida del archivo</p><h2>Columnas a exportar</h2></div><button type="button" className="link-button" onClick={() => setSelected([])}>Limpiar selección</button></header><div className="column-search"><input value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder={columnSearchPlaceholder} /><span>{visibleColumns.length} disponibles</span></div><div className="column-picker">{visibleColumns.map((column) => <label key={column.key} className={selected.includes(column.key) ? 'is-selected' : ''}><input type="checkbox" checked={selected.includes(column.key)} onChange={() => toggleColumn(column.key)} /><span>{column.label}</span></label>)}</div></section>
+      <section className="panel report-columns-panel"><header><div><span className="report-step">01</span><p className="eyebrow">Datos de salida</p><h2>Columnas a mostrar</h2></div><button type="button" className="link-button" onClick={() => setSelected([])}>Limpiar selección</button></header><div className="column-search"><input value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} placeholder={columnSearchPlaceholder} /><span>{visibleColumns.length} disponibles</span></div><div className="column-picker">{visibleColumns.map((column) => <label key={column.key} className={selected.includes(column.key) ? 'is-selected' : ''}><input type="checkbox" checked={selected.includes(column.key)} onChange={() => toggleColumn(column.key)} /><span>{column.label}</span></label>)}</div></section>
       <section className="panel report-filters-panel"><header><div><span className="report-step">02</span><p className="eyebrow">Universo de datos</p><h2>Filtros y aranceles</h2></div><p>Opcionales</p></header><div className="report-period">{periodSelect('desde', 'Desde (mes - año)')}{periodSelect('hasta', 'Hasta (mes - año)')}<small>{periodos.length ? `Meses cargados: ${periodos.map(periodLabel).join(', ')}` : ''}</small></div><div className="report-filters report-universe">
         {universe.map(renderFilter)}
       </div>
-      {activeRubroFilters.length ? <div className="report-other-filters"><strong>Filtros adicionales de este rubro</strong><p>Siguen aplicándose. Si los quitas, no volverán a aparecer aquí.</p><div className="report-filters">{activeRubroFilters.map(renderFilter)}</div></div> : null}<footer><div><span className="report-step">03</span><strong>Revisar resultados</strong><p>{`${periodLabel(rango.desde)} a ${periodLabel(rango.hasta)}. Se guarda con el rubro.`}</p></div><button type="button" className="report-run" disabled={!selected.length || loadingPreview || generating} onClick={() => void loadPreview(1)}>{loadingPreview && !preview ? 'Calculando...' : 'Ver resultados'}</button></footer></section>
+      {activeRubroFilters.length ? <div className="report-other-filters"><strong>Filtros adicionales de este rubro</strong><p>Siguen aplicándose. Si los quitas, no volverán a aparecer aquí.</p><div className="report-filters">{activeRubroFilters.map(renderFilter)}</div></div> : null}<footer><div><span className="report-step">03</span><strong>Consultar</strong><p>{`${periodLabel(rango.desde)} a ${periodLabel(rango.hasta)}. Se guarda con el rubro.`}</p></div><button type="button" className="report-run" disabled={!selected.length || loadingPreview || generating} onClick={() => void loadPreview(1)}>{loadingPreview ? 'Calculando...' : 'Ver resultados'}</button></footer></section>
     </section>
-    {preview ? <section className="panel report-preview"><header><div><span className="report-step">04</span><p className="eyebrow">Resultados en pantalla</p><h2>Revisa antes de generar el archivo</h2></div><div className="report-preview-action"><button type="button" className="report-run" disabled={generating || !preview.registros} onClick={() => void execute()}>{generating ? 'Generando informe...' : 'Generar Excel'}</button>{generating ? <small>{progress}</small> : null}</div></header>
+    {preview ? <div className="modal-backdrop"><section className="report-preview" role="dialog" aria-modal="true" aria-label={`Resultados de ${title}`}>
+      <header><div><p className="eyebrow">Resultados</p><h2>{title}</h2></div><div className="report-preview-action"><button type="button" className="report-excel" disabled={generating || !preview.registros} onClick={() => void execute()}>{generating ? 'Generando Excel...' : 'Descargar Excel'}</button><button type="button" className="link-button" disabled={generating} onClick={closePreview}>Cerrar</button></div></header>
+      {generating ? <p className="report-preview-note">{progress}</p> : null}
+      {message ? <p className="login-message report-preview-note">{message}</p> : null}
       <div className="report-totals">
         <div><span>Registros (ítems)</span><strong>{count(preview.registros)}</strong></div>
         {preview.totales ? <><div><span>{documento}</span><strong>{count(preview.totales.documentos)}</strong></div><div><span>USD CIF</span><strong>{usd(preview.totales.cif_usd)}</strong></div><div><span>USD FOB</span><strong>{usd(preview.totales.fob_usd)}</strong></div><div><span>Cantidad</span>{preview.totales.cantidades_por_unidad.length ? preview.totales.cantidades_por_unidad.map((item) => <strong key={item.unidad} className="report-total-unit">{count(item.cantidad)} {item.glosa || item.unidad}</strong>) : <strong>0</strong>}</div></> : null}
       </div>
       {preview.totales_omitidos ? <p className="report-preview-note">Son demasiados registros para calcular los totales en línea. Acota el período o agrega filtros para verlos.</p> : <p className="report-preview-note">Los montos suman solo los ítems que cumplen los filtros, sin repetir los totales de cada {documento}.{kind === 'exportaciones' && preview.totales ? ` El DUS no trae CIF por ítem: se reparte según el FOB, y solo ${count(preview.totales.documentos_con_cif ?? 0)} de ${count(preview.totales.documentos)} DUS declaran CIF.` : ''} Las cantidades se muestran por unidad de medida porque no se pueden sumar entre sí.</p>}
-      {preview.registros ? <div className="table-wrap"><table className="uploads-table report-preview-table"><thead><tr>{preview.columnas.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{preview.filas.map((fila, index) => <tr key={index}>{fila.map((value, position) => <td key={preview.columnas[position].key}>{cell(value)}</td>)}</tr>)}</tbody></table></div> : <p className="report-preview-note">No hay registros para estos filtros y período.</p>}
-      {preview.paginas > 1 ? <div className="report-pager"><button type="button" disabled={loadingPreview || preview.pagina <= 1} onClick={() => void loadPreview(preview.pagina - 1)}>Anterior</button><span>Página {count(preview.pagina)} de {count(preview.paginas)}</span><button type="button" disabled={loadingPreview || preview.pagina >= preview.paginas} onClick={() => void loadPreview(preview.pagina + 1)}>Siguiente</button></div> : null}
-    </section> : null}
+      <div className="report-preview-toolbar"><label>Mostrando <select value={pageSize} disabled={loadingPreview} onChange={(event) => void loadPreview(1, Number(event.target.value))}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select> registros por página</label>{columnFilters ? <small>Escribe en una columna y presiona Enter para filtrar.</small> : null}{Object.keys(appliedColumnFilters).length ? <button type="button" className="link-button" disabled={loadingPreview} onClick={() => { setColumnDrafts({}); applyColumnFilters({}) }}>Limpiar filtros</button> : null}{loadingPreview ? <small>Actualizando...</small> : null}</div>
+      <div className="table-wrap"><table className="uploads-table report-preview-table"><thead><tr>{preview.columnas.map((column) => <th key={column.key}>{column.label}</th>)}</tr>{columnFilters ? <tr className="report-column-filters">{preview.columnas.map((column) => <th key={column.key}><input aria-label={`Filtrar ${column.label}`} placeholder="Filtrar" value={columnDrafts[column.key] ?? ''} onChange={(event) => setColumnDrafts({ ...columnDrafts, [column.key]: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') applyColumnFilters() }} onBlur={() => applyColumnFilters()} /></th>)}</tr> : null}</thead><tbody>{preview.filas.length ? preview.filas.map((fila, index) => <tr key={index}>{fila.map((value, position) => <td key={preview.columnas[position].key}>{cell(value)}</td>)}</tr>) : <tr><td colSpan={preview.columnas.length}>No hay registros para estos filtros y período.</td></tr>}</tbody></table></div>
+      <div className="report-pager"><button type="button" disabled={loadingPreview || preview.pagina <= 1} onClick={() => void loadPreview(preview.pagina - 1)}>Anterior</button><span>Página {count(preview.pagina)} de {count(preview.paginas)}</span><button type="button" disabled={loadingPreview || preview.pagina >= preview.paginas} onClick={() => void loadPreview(preview.pagina + 1)}>Siguiente</button></div>
+    </section></div> : null}
     {showRubroDialog ? <div className="modal-backdrop"><section className="modal"><h2>{editing ? 'Actualizar rubro' : 'Crear rubro'}</h2><label>Nombre<input value={rubroName} onChange={(event) => setRubroName(event.target.value)} autoFocus /></label><div><button type="button" onClick={saveRubro}>Guardar</button><button type="button" className="link-button" onClick={() => setShowRubroDialog(false)}>Cancelar</button></div></section></div> : null}
   </main>
 }
