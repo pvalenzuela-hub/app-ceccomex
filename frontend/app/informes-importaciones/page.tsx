@@ -9,12 +9,12 @@ const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
 const importadorOption = (item: Importador): Option => ({ value: String(item.id), label: item.nombre, hint: item.rut ? `${item.rut}-${item.dv}` : 'Sin RUT' })
 
 async function searchImportadores(text: string) {
-  const response = await fetch(`${api}/api/reportes/importadores/?q=${encodeURIComponent(text)}`)
+  const response = await fetch(`${api}/api/reportes/importadores/?q=${encodeURIComponent(text)}`, { credentials: 'include' })
   return response.ok ? (await response.json() as Importador[]).map(importadorOption) : []
 }
 
 async function importadorLabels(ids: string[]) {
-  const response = await fetch(`${api}/api/reportes/importadores/?ids=${ids.join(',')}`)
+  const response = await fetch(`${api}/api/reportes/importadores/?ids=${ids.join(',')}`, { credentials: 'include' })
   return response.ok ? Object.fromEntries((await response.json() as Importador[]).map((item) => [String(item.id), item.nombre])) : {}
 }
 

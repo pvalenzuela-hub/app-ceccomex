@@ -1,7 +1,6 @@
 from rest_framework.viewsets import ModelViewSet
 from django.db.models import Q
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from catalogos.serializers import CatalogoCodigoSerializer, PartidaArancelariaSerializer
@@ -17,10 +16,6 @@ class CatalogoCodigoViewSet(ModelViewSet):
     serializer_class = CatalogoCodigoSerializer
     pagination_class = CatalogPagination
 
-    def get_permissions(self):
-        permission_class = AllowAny if self.action in ("list", "retrieve") else IsAuthenticated
-        return [permission_class()]
-
     def get_queryset(self):
         queryset = CatalogoCodigo.objects.all().order_by("grupo", "codigo")
         grupo = self.request.query_params.get("grupo", "").strip()
@@ -35,10 +30,6 @@ class CatalogoCodigoViewSet(ModelViewSet):
 class PartidaArancelariaViewSet(ModelViewSet):
     serializer_class = PartidaArancelariaSerializer
     pagination_class = CatalogPagination
-
-    def get_permissions(self):
-        permission_class = AllowAny if self.action in ("list", "retrieve") else IsAuthenticated
-        return [permission_class()]
 
     def get_queryset(self):
         queryset = PartidaArancelaria.objects.all().order_by("codigo")

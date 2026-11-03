@@ -109,7 +109,7 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
   async function searchPartidas(value: string) {
     setPartidaText(value)
     if (value.trim().length < 2) return setPartidas([])
-    const response = await fetch(`${api}/api/reportes/importaciones/partidas/?q=${encodeURIComponent(value)}`)
+    const response = await fetch(`${api}/api/reportes/importaciones/partidas/?q=${encodeURIComponent(value)}`, { credentials: 'include' })
     if (response.ok) setPartidas(await response.json())
   }
 

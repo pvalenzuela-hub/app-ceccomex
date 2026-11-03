@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from comercio.busqueda import texto_producto_importacion
@@ -57,6 +58,7 @@ class InformeImportacionesUniversoTests(TestCase):
         self.assertEqual(self.ids({"pais_origen_codigo": ["336"], "aduana_codigo": ["14"]}), set())
 
     def test_importer_search_by_name_rut_and_ids(self):
+        self.client.force_login(get_user_model().objects.create_user("buscador", password="x"))
         by_name = self.client.get("/api/reportes/importadores/", {"q": "sony"}).json()
         by_rut = self.client.get("/api/reportes/importadores/", {"q": "76.123"}).json()
         by_ids = self.client.get("/api/reportes/importadores/", {"ids": str(self.sony.id)}).json()

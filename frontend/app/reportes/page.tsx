@@ -34,7 +34,7 @@ export default function ReportesPage() {
   const [message, setMessage] = useState('Cargando reportes sectoriales...')
 
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/reportes/`, { cache: 'no-store' })
+    fetch(`${apiBaseUrl}/api/reportes/`, { cache: 'no-store', credentials: 'include' })
       .then((response) => response.json())
       .then((data) => {
         const nextReports = Array.isArray(data) ? data : []
@@ -49,7 +49,7 @@ export default function ReportesPage() {
     setDetails([])
     setMessage(`Cargando ${report.rubro}...`)
     try {
-      const response = await fetch(`${apiBaseUrl}/api/reportes/${report.id}/`, { cache: 'no-store' })
+      const response = await fetch(`${apiBaseUrl}/api/reportes/${report.id}/`, { cache: 'no-store', credentials: 'include' })
       const data = await response.json()
       setDetails(Array.isArray(data) ? data : [])
       setMessage(`${report.total_registros} filas registradas. Mostrando las primeras ${Array.isArray(data) ? data.length : 0}.`)

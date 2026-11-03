@@ -88,7 +88,7 @@ export default function ConsultasPage() {
   })
 
   async function loadFavorites() {
-    const response = await fetch(`${apiBaseUrl}/api/consultas/favoritos/`)
+    const response = await fetch(`${apiBaseUrl}/api/consultas/favoritos/`, { credentials: 'include' })
     if (response.ok) setFavorites(await response.json())
   }
 
@@ -113,7 +113,7 @@ export default function ConsultasPage() {
     params.set('page_size', String(pageSize))
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/consultas/importaciones/?${params.toString()}`, { cache: 'no-store' })
+      const response = await fetch(`${apiBaseUrl}/api/consultas/importaciones/?${params.toString()}`, { cache: 'no-store', credentials: 'include' })
       const rawText = await response.text()
       const data = rawText ? JSON.parse(rawText) : {}
       const results = Array.isArray(data?.results) ? data.results : []
@@ -133,7 +133,7 @@ export default function ConsultasPage() {
 
   async function loadPendingCodes() {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/consultas/pendientes-revision/?limit=20`, { cache: 'no-store' })
+      const response = await fetch(`${apiBaseUrl}/api/consultas/pendientes-revision/?limit=20`, { cache: 'no-store', credentials: 'include' })
       const rawText = await response.text()
       const data = rawText ? JSON.parse(rawText) : {}
       setPendingCodes(Array.isArray(data?.results) ? data.results : [])
@@ -166,6 +166,7 @@ export default function ConsultasPage() {
       const params = buildQueryParams(filters, page)
       const response = await fetch(`${apiBaseUrl}/api/consultas/importaciones/exportar/?${params.toString()}`, {
         cache: 'no-store',
+        credentials: 'include',
       })
       if (!response.ok) {
         setMessage(`No se pudo exportar (${response.status})`)
@@ -225,7 +226,7 @@ export default function ConsultasPage() {
       setPartidaOptions([])
       return
     }
-    const response = await fetch(`${apiBaseUrl}/api/catalogos/partidas/?search=${encodeURIComponent(value)}&page_size=12`)
+    const response = await fetch(`${apiBaseUrl}/api/catalogos/partidas/?search=${encodeURIComponent(value)}&page_size=12`, { credentials: 'include' })
     if (!response.ok) return
     const data = await response.json()
     setPartidaOptions(Array.isArray(data.results) ? data.results : [])

@@ -2,6 +2,7 @@ import io
 import tempfile
 import zipfile
 
+from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -119,6 +120,9 @@ class ExportLoaderTests(TestCase):
 
 
 class ExportUploadViewTests(TestCase):
+    def setUp(self):
+        self.client.force_login(get_user_model().objects.create_user("u", password="x"))
+
     def test_upload_loads_only_the_txt_matching_the_selected_type(self):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
