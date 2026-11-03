@@ -14,7 +14,7 @@ from django.db import connection, transaction
 
 from comercio.busqueda import texto_producto_importacion
 from comercio.models import ArchivoCarga, Importacion
-from comercio.processing import importers_by_key, normalize_rut, parse_txt_line
+from comercio.processing import din_importers_by_number, normalize_rut, parse_txt_line
 
 
 DIN_COLUMNS = 178
@@ -131,7 +131,7 @@ class Command(BaseCommand):
         with archive.open(member) as stream:
             periodo = period_of(next(iter_lines(stream))[1].split(";"))
         nombre = f"DIN:{periodo[0]}{periodo[1]:02d}:{crc:08x}"
-        importers = importers_by_key()
+        importers = din_importers_by_number(*periodo)
         with transaction.atomic():
             if connection.vendor == "postgresql":
                 with connection.cursor() as cursor:

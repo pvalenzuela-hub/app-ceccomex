@@ -61,15 +61,30 @@ def normalize_rut(value: str) -> str:
     return "".join(char for char in str(value).upper() if char.isalnum())
 
 
-def importers_by_key() -> dict:
-    """ImportadorProbable by RUT+DV; sector reports also list the DIN NUM_UNICO_IMPORTADOR here (empty DV)."""
-    from reportes.models import ImportadorProbable
+REPORT_MONTHS = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6, "JULIO": 7, "AGOSTO": 8,
+    "SEPTIEMBRE": 9, "SETIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
 
+
+def report_month(value) -> int | None:
+    """Month of a sector report row: its MES cell holds either a name or a number."""
+    text = str(value or "").strip().upper()
+    return int(text) if text.isdigit() else REPORT_MONTHS.get(text)
+
+
+def din_importers_by_number(periodo_anio: int, periodo_mes: int) -> dict:
+    """ImportadorProbable by DIN NUM_UNICO_IMPORTADOR: the number only identifies an importer within its own month."""
+    from reportes.models import ReporteSectorialDetalle
+
+    rows = ReporteSectorialDetalle.objects.filter(
+        dv="", reporte__periodo_anio=periodo_anio, importador_probable__isnull=False,
+    ).select_related("importador_probable").order_by("id")
     importers = {}
-    for importer in ImportadorProbable.objects.all():
-        key = normalize_rut(f"{importer.rut}{importer.dv}")
-        if key and key not in importers:
-            importers[key] = importer
+    for row in rows:
+        key = normalize_rut(row.rut)
+        if key and report_month(row.payload_json.get("MES")) == periodo_mes:
+            importers.setdefault(key, row.importador_probable)
     return importers
 
 
@@ -100,7 +115,7 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
     staging_rows = ArchivoCargaStaging.objects.filter(archivo_carga=archivo_carga, procesado=True).order_by("nro_linea")
 
     if archivo_carga.tipo_archivo == "IMP":
-        importers = importers_by_key()
+        importers = din_importers_by_number(archivo_carga.periodo_anio, archivo_carga.periodo_mes)
         Importacion.objects.filter(archivo_origen=archivo_carga).delete()
         buffer = []
         batch_size = 1000

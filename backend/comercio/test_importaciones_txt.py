@@ -8,13 +8,19 @@ from django.test import TestCase
 
 from comercio.models import ArchivoCarga, Importacion
 from comercio.processing import materialize_final_rows, store_staging_rows
-from reportes.models import ImportadorProbable
+from comercio.processing import din_importers_by_number
+from reportes.models import ImportadorProbable, ReporteSectorial, ReporteSectorialDetalle
 
 FIELDS = (
     "periodo_anio", "periodo_mes", "numero_ident", "importador_probable_sugerido_id", "item", "fecha_text", "aduana_codigo",
     "comuna_importador_codigo", "pais_origen_codigo", "via_transporte_codigo", "partida_arancelaria_codigo",
     "glosa_mercancia", "valor_fob", "valor_flete", "valor_seguro", "valor_cif", "payload_json",
 )
+
+
+def sector_row(importer, rut, mes, anio=2026, dv="", nro_linea=1):
+    report, _ = ReporteSectorial.objects.get_or_create(nombre_archivo="r.xlsx", hoja_base="Base", defaults={"rubro": "R", "periodo_anio": anio, "periodo_mes": 3})
+    return ReporteSectorialDetalle.objects.create(reporte=report, nro_linea=nro_linea, importador_probable=importer, rut=rut, dv=dv, payload_json={"MES": mes})
 
 
 def din_line(numero="23441803", unico="10998", item="1", fecaccp="19032026", columns=178):
@@ -29,7 +35,7 @@ class ImportacionesTxtCommandTests(TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        ImportadorProbable.objects.create(rut="10998", dv="", nombre="NO INFORMADO")
+        sector_row(ImportadorProbable.objects.create(rut="10998", dv="", nombre="NO INFORMADO"), "10998", "Marzo")
 
     def zip(self, lines, name="marzo.zip"):
         path = Path(self.dir.name) / name
@@ -65,6 +71,51 @@ class ImportacionesTxtCommandTests(TestCase):
             call_command("import_importaciones_txt", str(self.zip([din_line(unico="777")], "otro.zip")), stdout=io.StringIO())
         call_command("import_importaciones_txt", str(self.zip([din_line(unico="777")], "otro.zip")), "--replace", stdout=io.StringIO())
         self.assertEqual(list(Importacion.objects.values_list("numero_ident", flat=True)), ["777"])
+
+    def test_number_from_another_month_is_not_suggested(self):
+        out = io.StringIO()
+        call_command("import_importaciones_txt", str(self.zip([din_line(fecaccp="19022026")], "febrero.zip")), stdout=out)
+        self.assertIsNone(Importacion.objects.get(periodo_mes=2).importador_probable_sugerido)
+
+
+class ImportadoresPorMesTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.alfa = ImportadorProbable.objects.create(rut="100", dv="", nombre="ALFA")
+        cls.beta = ImportadorProbable.objects.create(rut="100", dv="", nombre="BETA")
+        cls.real = ImportadorProbable.objects.create(rut="76123456", dv="0", nombre="RUT REAL")
+        sector_row(cls.alfa, "100", "Enero", nro_linea=1)
+        sector_row(cls.beta, "100", "Febrero", nro_linea=2)
+        sector_row(cls.alfa, "200", "02", nro_linea=3)
+        sector_row(cls.real, "76123456", "Febrero", dv="0", nro_linea=4)
+
+    def test_each_month_only_sees_its_own_numbers(self):
+        self.assertEqual(din_importers_by_number(2026, 1), {"100": self.alfa})
+        self.assertEqual(din_importers_by_number(2026, 2), {"100": self.beta, "200": self.alfa})
+        self.assertEqual(din_importers_by_number(2026, 3), {})
+        self.assertEqual(din_importers_by_number(2025, 2), {})
+
+    def importacion(self, numero, mes, sugerido=None, **extra):
+        source = ArchivoCarga.objects.create(nombre_archivo=f"{numero}-{mes}", archivo="cargas/x.zip", tipo_archivo="IMP", periodo_anio=2026, periodo_mes=mes)
+        return Importacion.objects.create(archivo_origen=source, periodo_anio=2026, periodo_mes=mes, numero_ident=numero, importador_probable_sugerido=sugerido, **extra)
+
+    def test_command_recalculates_only_with_aplicar_and_skips_real_ruts(self):
+        wrong = self.importacion("100", 1, self.beta)
+        unsupported = self.importacion("999", 3, self.alfa)
+        missing = self.importacion("200", 2)
+        mdb = self.importacion("76123456", 6, self.real, payload_json={"source_format": "MDB_JET3_2015"})
+
+        out = io.StringIO()
+        call_command("recalcular_importadores_din", stdout=out)
+        self.assertIn("2026-03: 1 filas; con sugerencia 1 -> 0; sin respaldo 1", out.getvalue())
+        self.assertIn("2026-06: MDB", out.getvalue())
+        unsupported.refresh_from_db()
+        self.assertEqual(unsupported.importador_probable_sugerido, self.alfa)
+
+        call_command("recalcular_importadores_din", "--aplicar", stdout=io.StringIO())
+        for row, expected in ((wrong, self.alfa), (unsupported, None), (missing, self.alfa), (mdb, self.real)):
+            row.refresh_from_db()
+            self.assertEqual(row.importador_probable_sugerido, expected)
 
 
 class TextoProductoTests(TestCase):
