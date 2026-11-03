@@ -222,7 +222,7 @@ export default function DashboardPage() {
         <div className="dashboard-meta">
           <div className="meta-chip">Sesión local</div>
           <div className="meta-chip">Carga pendiente</div>
-          <button className="link-button" type="button" onClick={() => router.push('/consultas')}>Ir a consultas</button>
+          <button className="link-button" type="button" onClick={() => router.push('/informes-importaciones')}>Ir a Consulta de Importaciones</button>
           <button className="link-button" type="button" onClick={() => void logout()}>Cerrar sesión</button>
         </div>
       </section>
