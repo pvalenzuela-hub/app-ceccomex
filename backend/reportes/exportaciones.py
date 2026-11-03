@@ -4,6 +4,7 @@ import tempfile
 from collections import defaultdict
 
 import xlsxwriter
+from django.db.models import Case, Count, F, Q, When
 from django.http import FileResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -13,7 +14,7 @@ from rest_framework.response import Response
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from comercio.dus_txt import DUS_COLUMNS
 from comercio.models import Exportacion, ExportacionBulto, ExportacionDocTransporte
-from reportes.views import _period_range_q, parse_periodo, producto_q, solicitar_informe
+from reportes.views import MONTO, _period_range_q, numero_sql, parse_periodo, producto_q, resumir_totales, solicitar_informe, vista_previa
 
 
 # (field on Exportacion, catalog group) for every code that has a description.
@@ -148,10 +149,15 @@ def _in_range(model, desde, hasta):
     return model.objects.filter(_period_range_q(desde, hasta))
 
 
-def _bultos_by_dus(desde, hasta, catalogs):
+def _in_range_for(model, desde, hasta, numeros=None):
+    rows = _in_range(model, desde, hasta)
+    return rows if numeros is None else rows.filter(numero_ident__in=numeros)
+
+
+def _bultos_by_dus(desde, hasta, catalogs, numeros=None):
     """{(anio, mes, numero_ident): (total bultos, tipos)} for the report range."""
     totals = defaultdict(lambda: [0, set()])
-    rows = _in_range(ExportacionBulto, desde, hasta).values_list("periodo_anio", "periodo_mes", "numero_ident", "cantidad_bultos", "tipo_bulto_codigo")
+    rows = _in_range_for(ExportacionBulto, desde, hasta, numeros).values_list("periodo_anio", "periodo_mes", "numero_ident", "cantidad_bultos", "tipo_bulto_codigo")
     for anio, mes, numero, cantidad, tipo in rows.iterator(chunk_size=5000):
         key = (anio, mes, numero)
         try:
@@ -162,9 +168,9 @@ def _bultos_by_dus(desde, hasta, catalogs):
     return {key: (total, ", ".join(sorted(tipos))) for key, (total, tipos) in totals.items()}
 
 
-def _docs_by_dus(desde, hasta):
+def _docs_by_dus(desde, hasta, numeros=None):
     docs = defaultdict(lambda: ([], [], []))
-    rows = _in_range(ExportacionDocTransporte, desde, hasta).order_by("numero_ident", "secuencia")
+    rows = _in_range_for(ExportacionDocTransporte, desde, hasta, numeros).order_by("numero_ident", "secuencia")
     for anio, mes, numero, documento, nave, viaje in rows.values_list("periodo_anio", "periodo_mes", "numero_ident", "numero_documento", "nave", "numero_viaje").iterator(chunk_size=5000):
         for values, value in zip(docs[(anio, mes, numero)], (documento, nave, viaje)):
             if value and value not in values:
@@ -212,15 +218,37 @@ def exportaciones_configuracion(request):
     })
 
 
-def informe_exportaciones_rows(parametros):
-    """(header, queryset, row function) for a stored report request; used by the Celery task."""
+def informe_exportaciones_rows(parametros, numeros=None):
+    """(header, queryset, row function) for a stored report request; `numeros` limits the bultos and documents read."""
     columns = parametros["columnas"]
     desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
     qs = filtered_exportaciones_informe(parametros.get("filtros", {}), desde=desde, hasta=hasta)
     catalogs = load_catalogs()
-    bultos = _bultos_by_dus(desde, hasta, catalogs) if BULTO_COLUMNS.intersection(columns) else None
-    docs = _docs_by_dus(desde, hasta) if DOC_COLUMNS.intersection(columns) else None
+    bultos = _bultos_by_dus(desde, hasta, catalogs, numeros) if BULTO_COLUMNS.intersection(columns) else None
+    docs = _docs_by_dus(desde, hasta, numeros) if DOC_COLUMNS.intersection(columns) else None
     return [EXPORT_COLUMN_MAP[key] for key in columns], qs, lambda row: [export_column_value(row, key, catalogs, bultos, docs) for key in columns]
+
+
+def totales_exportaciones(qs):
+    """FOB of the matching items. The DUS has no item CIF, so each item takes the DUS CIF by its share of the
+    DUS FOB: *_dus values repeat on every item and also count items the filters left out."""
+    qs = qs.annotate(_fob=numero_sql(F("valor_fob")), _fob_dus=numero_sql(F("valor_fob_dus")), _cif_dus=numero_sql(F("valor_cif_dus")))
+    cif = Case(When(Q(_fob_dus__isnull=False) & ~Q(_fob_dus=0), then=F("_cif_dus") * F("_fob") / F("_fob_dus")), output_field=MONTO)
+    totales = resumir_totales(qs, cif, F("_fob"), numero_sql(F("cantidad_mercancia")), F("unidad_medida_codigo"), "unidades_medida")
+    # Most DUS declare a CIF of 0: without this count the CIF total reads as if it covered every DUS.
+    totales["documentos_con_cif"] = qs.order_by().filter(_cif_dus__gt=0).aggregate(total=Count("numero_ident", distinct=True))["total"]
+    return totales
+
+
+def _valores_exportaciones(parametros, filas):
+    _, _, valores = informe_exportaciones_rows(parametros, numeros={fila.numero_ident for fila in filas})
+    return [valores(fila) for fila in filas]
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vista_previa_exportaciones(request):
+    return vista_previa(request, EXPORT_COLUMN_MAP, DEFAULT_EXPORT_COLUMNS, filtered_exportaciones_informe, totales_exportaciones, _valores_exportaciones)
 
 
 @api_view(["POST"])

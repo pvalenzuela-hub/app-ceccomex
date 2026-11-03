@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import SearchableMultiSelect, { Option } from './searchable-multi-select'
 import TopNav from './top-nav'
 
@@ -10,6 +10,9 @@ type Filters = Record<string, string[]>
 type Periodo = { anio: number; mes: number }
 type Rango = { desde: Periodo; hasta: Periodo }
 type Rubro = { id: number; nombre: string; configuracion_json: { columnas?: string[]; filtros?: Filters; periodo?: Rango } }
+type Totales = { cif_usd: number; fob_usd: number; cantidad: number; cantidades_por_unidad: { unidad: string; glosa: string; cantidad: number }[]; documentos: number; documentos_con_cif?: number }
+type VistaPrevia = { columnas: { key: string; label: string }[]; filas: (string | number)[][]; pagina: number; paginas: number; por_pagina: number; registros: number; totales: Totales | null; totales_omitidos: boolean }
+type Solicitud = { columnas: string[]; filtros: Filters; periodo_desde: Periodo; periodo_hasta: Periodo }
 type Informe = { id: number; estado: 'PENDIENTE' | 'PROCESANDO' | 'LISTO' | 'ERROR'; filas_total: number; filas_procesadas: number; error: string; nombre_descarga: string }
 
 /** One filter of the "Universo de datos" panel; `key` is the name sent in `filtros`. */
@@ -20,19 +23,23 @@ export type FilterSpec =
   | { type: 'partidas'; key: 'partidas' }
 
 export type ReportBuilderProps = {
-  /** API segment: /api/reportes/<kind>/{configuracion,rubros,exportar}/ */
+  /** API segment: /api/reportes/<kind>/{configuracion,rubros,vista-previa,exportar}/ */
   kind: 'importaciones' | 'exportaciones'
   title: string
   lead: string
   columnSearchPlaceholder: string
   universe: FilterSpec[]
-  otherFilters: { summary: string; filters: FilterSpec[] }
+  /** Filters outside the universe: only shown when a saved rubro uses them, so they can be seen and removed. */
+  rubroFilters: FilterSpec[]
 }
 
 const MONTHS = Array.from({ length: 12 }, (_, index) => new Date(2026, index).toLocaleString('es-CL', { month: 'long' }))
 const periodKey = (periodo: Periodo) => periodo.anio * 100 + periodo.mes
 const periodLabel = (periodo: Periodo) => `${MONTHS[periodo.mes - 1]} ${periodo.anio}`
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+const usd = (value: number) => `US$ ${value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const count = (value: number) => value.toLocaleString('es-CL')
+const cell = (value: string | number) => typeof value === 'number' ? value.toLocaleString('es-CL', { useGrouping: false, maximumFractionDigits: 6 }) : value
 const toOptions = (items: Catalog[] = []): Option[] => items.map((item) => ({ value: item.codigo, label: item.glosa }))
 
 function csrfToken() {
@@ -49,7 +56,7 @@ function TermsFilter({ spec, values, onChange }: { spec: Extract<FilterSpec, { t
   return <div className="searchable-select product-terms"><label className="tariff-search"><span>{spec.label}{values.length ? ` (${values.length})` : ''}</span><div className="term-input"><input value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} placeholder={spec.placeholder} /><button type="button" onClick={add}>Agregar</button></div><small>{spec.help}</small></label>{values.length ? <div className="selected-values">{values.map((term) => <button key={term} type="button" onClick={() => onChange(values.filter((item) => item !== term))}>{term} ×</button>)}</div> : null}</div>
 }
 
-export default function ReportBuilder({ kind, title, lead, columnSearchPlaceholder, universe, otherFilters }: ReportBuilderProps) {
+export default function ReportBuilder({ kind, title, lead, columnSearchPlaceholder, universe, rubroFilters }: ReportBuilderProps) {
   const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'
   const base = `${api}/api/reportes/${kind}`
   const [columns, setColumns] = useState<Column[]>([])
@@ -69,6 +76,10 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
   const [generating, setGenerating] = useState(false)
   const [columnSearch, setColumnSearch] = useState('')
   const [remoteLabels, setRemoteLabels] = useState<Record<string, Record<string, string>>>({})
+  const [preview, setPreview] = useState<VistaPrevia | null>(null)
+  const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const previewRun = useRef(0)
 
   async function loadRubros() {
     const response = await fetch(`${base}/rubros/`, { credentials: 'include' })
@@ -90,6 +101,9 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     void loadRubros()
   }, [])
 
+  // The Excel must match what is on screen: changing the query discards the preview and any response in flight.
+  useEffect(() => { previewRun.current += 1; setPreview(null); setSolicitud(null); setLoadingPreview(false) }, [selected, filters, rango])
+
   function setFilter(name: string, values: string[]) { setFilters({ ...filters, [name]: values }) }
   function toggleColumn(key: string) { setSelected(selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key]) }
 
@@ -98,7 +112,7 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     setSelected(rubro.configuracion_json.columnas ?? [])
     setFilters(saved)
     if (rubro.configuracion_json.periodo) setRango(rubro.configuracion_json.periodo)
-    for (const spec of [...universe, ...otherFilters.filters]) {
+    for (const spec of [...universe, ...rubroFilters]) {
       const ids = saved[spec.key] ?? []
       if (spec.type === 'remote' && ids.length) void spec.labelsFor(ids).then((labels) => setRemoteLabels((current) => ({ ...current, [spec.key]: labels })))
     }
@@ -133,14 +147,32 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
     setRango({ ...rango, [part]: { ...rango[part], [field]: Number(value) } })
   }
 
-  async function execute() {
+  async function loadPreview(pagina: number) {
     if (periodKey(rango.desde) > periodKey(rango.hasta)) return setMessage('El período desde no puede ser posterior al período hasta.')
+    // Keep the catalog order of columns.
+    const request: Solicitud = solicitud ?? { columnas: columns.map((column) => column.key).filter((key) => selected.includes(key)), filtros: filters, periodo_desde: rango.desde, periodo_hasta: rango.hasta }
+    const run = ++previewRun.current
+    setLoadingPreview(true); setMessage('')
+    try {
+      await fetch(`${api}/api/health/`, { credentials: 'include' })
+      // Totals are the slow part and do not change between pages.
+      const totales = !preview || !solicitud
+      const response = await fetch(`${base}/vista-previa/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ ...request, pagina, totales }) })
+      if (run !== previewRun.current) return
+      if (!response.ok) return setMessage((await response.json().catch(() => null))?.detail ?? `No se pudieron cargar los resultados (${response.status}).`)
+      const data: VistaPrevia = await response.json()
+      if (run !== previewRun.current) return
+      setSolicitud(request)
+      setPreview(totales ? data : { ...data, totales: preview?.totales ?? null })
+    } finally { if (run === previewRun.current) setLoadingPreview(false) }
+  }
+
+  async function execute() {
+    if (!solicitud) return
     setGenerating(true); setMessage(''); setProgress('Enviando solicitud...')
     try {
       await fetch(`${api}/api/health/`, { credentials: 'include' })
-      // Keep the catalog order of columns.
-      const columnas = columns.map((column) => column.key).filter((key) => selected.includes(key))
-      const response = await fetch(`${base}/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify({ columnas, filtros: filters, periodo_desde: rango.desde, periodo_hasta: rango.hasta }) })
+      const response = await fetch(`${base}/exportar/`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() }, body: JSON.stringify(solicitud) })
       if (!response.ok) return setMessage((await response.json().catch(() => null))?.detail ?? `No se pudo generar el Excel (${response.status}).`)
       let informe: Informe = await response.json()
       // Reports are generated by the background worker; poll until the file is ready.
@@ -157,7 +189,7 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
       if (!file.ok) return setMessage(`No se pudo descargar el informe (${file.status}).`)
       const url = URL.createObjectURL(await file.blob())
       const link = document.createElement('a'); link.href = url; link.download = informe.nombre_descarga; link.click(); URL.revokeObjectURL(url)
-      setMessage(`Informe generado y descargado: ${informe.filas_total.toLocaleString('es-CL')} filas (${periodLabel(rango.desde)} a ${periodLabel(rango.hasta)}).`)
+      setMessage(`Informe generado y descargado: ${informe.filas_total.toLocaleString('es-CL')} filas (${periodLabel(solicitud.periodo_desde)} a ${periodLabel(solicitud.periodo_hasta)}).`)
     } finally { setGenerating(false); setProgress('') }
   }
 
@@ -166,6 +198,8 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
   const years = Array.from({ length: Math.max(...knownYears) - Math.min(...knownYears) + 1 }, (_, index) => Math.max(...knownYears) - index)
   const periodSelect = (part: 'desde' | 'hasta', label: string) => <div className="period-field"><span>{label}</span><div><select disabled={generating} value={rango[part].mes} onChange={(event) => setRangoPart(part, 'mes', event.target.value)}>{MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select><select disabled={generating} value={rango[part].anio} onChange={(event) => setRangoPart(part, 'anio', event.target.value)}>{years.map((year) => <option key={year} value={year}>{year}</option>)}</select></div></div>
 
+  const documento = kind === 'importaciones' ? 'DIN' : 'DUS'
+  const activeRubroFilters = rubroFilters.filter((spec) => (filters[spec.key] ?? []).length)
   const visibleColumns = columns.filter((column) => column.label.toLowerCase().includes(columnSearch.toLowerCase()) || column.key.toLowerCase().includes(columnSearch.toLowerCase()))
 
   function renderFilter(spec: FilterSpec) {
@@ -186,8 +220,17 @@ export default function ReportBuilder({ kind, title, lead, columnSearchPlacehold
       <section className="panel report-filters-panel"><header><div><span className="report-step">02</span><p className="eyebrow">Universo de datos</p><h2>Filtros y aranceles</h2></div><p>Opcionales</p></header><div className="report-period">{periodSelect('desde', 'Desde (mes - año)')}{periodSelect('hasta', 'Hasta (mes - año)')}<small>{periodos.length ? `Meses cargados: ${periodos.map(periodLabel).join(', ')}` : ''}</small></div><div className="report-filters report-universe">
         {universe.map(renderFilter)}
       </div>
-      <details className="report-other-filters"><summary>{otherFilters.summary}</summary><div className="report-filters">{otherFilters.filters.map(renderFilter)}</div></details><footer><div><span className="report-step">03</span><strong>Generar archivo</strong><p>{generating ? progress : `${periodLabel(rango.desde)} a ${periodLabel(rango.hasta)}. Se guarda con el rubro.`}</p></div><button type="button" className="report-run" disabled={!selected.length || generating} onClick={() => void execute()}>{generating ? 'Generando informe...' : 'Generar Excel'}</button></footer></section>
+      {activeRubroFilters.length ? <div className="report-other-filters"><strong>Filtros adicionales de este rubro</strong><p>Siguen aplicándose. Si los quitas, no volverán a aparecer aquí.</p><div className="report-filters">{activeRubroFilters.map(renderFilter)}</div></div> : null}<footer><div><span className="report-step">03</span><strong>Revisar resultados</strong><p>{`${periodLabel(rango.desde)} a ${periodLabel(rango.hasta)}. Se guarda con el rubro.`}</p></div><button type="button" className="report-run" disabled={!selected.length || loadingPreview || generating} onClick={() => void loadPreview(1)}>{loadingPreview && !preview ? 'Calculando...' : 'Ver resultados'}</button></footer></section>
     </section>
+    {preview ? <section className="panel report-preview"><header><div><span className="report-step">04</span><p className="eyebrow">Resultados en pantalla</p><h2>Revisa antes de generar el archivo</h2></div><div className="report-preview-action"><button type="button" className="report-run" disabled={generating || !preview.registros} onClick={() => void execute()}>{generating ? 'Generando informe...' : 'Generar Excel'}</button>{generating ? <small>{progress}</small> : null}</div></header>
+      <div className="report-totals">
+        <div><span>Registros (ítems)</span><strong>{count(preview.registros)}</strong></div>
+        {preview.totales ? <><div><span>{documento}</span><strong>{count(preview.totales.documentos)}</strong></div><div><span>USD CIF</span><strong>{usd(preview.totales.cif_usd)}</strong></div><div><span>USD FOB</span><strong>{usd(preview.totales.fob_usd)}</strong></div><div><span>Cantidad</span>{preview.totales.cantidades_por_unidad.length ? preview.totales.cantidades_por_unidad.map((item) => <strong key={item.unidad} className="report-total-unit">{count(item.cantidad)} {item.glosa || item.unidad}</strong>) : <strong>0</strong>}</div></> : null}
+      </div>
+      {preview.totales_omitidos ? <p className="report-preview-note">Son demasiados registros para calcular los totales en línea. Acota el período o agrega filtros para verlos.</p> : <p className="report-preview-note">Los montos suman solo los ítems que cumplen los filtros, sin repetir los totales de cada {documento}.{kind === 'exportaciones' && preview.totales ? ` El DUS no trae CIF por ítem: se reparte según el FOB, y solo ${count(preview.totales.documentos_con_cif ?? 0)} de ${count(preview.totales.documentos)} DUS declaran CIF.` : ''} Las cantidades se muestran por unidad de medida porque no se pueden sumar entre sí.</p>}
+      {preview.registros ? <div className="table-wrap"><table className="uploads-table report-preview-table"><thead><tr>{preview.columnas.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{preview.filas.map((fila, index) => <tr key={index}>{fila.map((value, position) => <td key={preview.columnas[position].key}>{cell(value)}</td>)}</tr>)}</tbody></table></div> : <p className="report-preview-note">No hay registros para estos filtros y período.</p>}
+      {preview.paginas > 1 ? <div className="report-pager"><button type="button" disabled={loadingPreview || preview.pagina <= 1} onClick={() => void loadPreview(preview.pagina - 1)}>Anterior</button><span>Página {count(preview.pagina)} de {count(preview.paginas)}</span><button type="button" disabled={loadingPreview || preview.pagina >= preview.paginas} onClick={() => void loadPreview(preview.pagina + 1)}>Siguiente</button></div> : null}
+    </section> : null}
     {showRubroDialog ? <div className="modal-backdrop"><section className="modal"><h2>{editing ? 'Actualizar rubro' : 'Crear rubro'}</h2><label>Nombre<input value={rubroName} onChange={(event) => setRubroName(event.target.value)} autoFocus /></label><div><button type="button" onClick={saveRubro}>Guardar</button><button type="button" className="link-button" onClick={() => setShowRubroDialog(false)}>Cancelar</button></div></section></div> : null}
   </main>
 }

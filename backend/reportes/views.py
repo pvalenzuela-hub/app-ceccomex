@@ -1,11 +1,15 @@
 import math
 
-from django.db.models import Q
+from django.db.models import Case, Count, DecimalField, F, Q, Sum, Value, When
+from django.db.models.fields.json import KeyTextTransform, KeyTransform
+from django.db.models.functions import Cast, Coalesce, Replace
+from django.db.models.lookups import Regex
 from django.core.paginator import Paginator
 from django.http import FileResponse
 from kombu.exceptions import OperationalError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -225,7 +229,7 @@ def _period_range_q(desde, hasta):
 
 
 def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=None, hasta=None):
-    qs = Importacion.objects.select_related("importador_probable_sugerido").order_by("-creado")
+    qs = Importacion.objects.select_related("importador_probable_sugerido").order_by("-creado", "-id")
     if desde and hasta:
         qs = qs.filter(_period_range_q(desde, hasta))
     if periodo_anio:
@@ -252,7 +256,7 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
         terms = _selected_values(filters.get(field, []))
         if terms:
             qs = qs.filter(producto_q(terms))
-    regimenes =_selected_values(filters.get("regimenes", []))
+    regimenes = _selected_values(filters.get("regimenes", []))
     if regimenes:
         qs = qs.filter(
             Q(payload_json__raw_columns__54__in=regimenes)
@@ -491,27 +495,36 @@ def _informe_json(informe):
     }
 
 
-def solicitar_informe(request, tipo, column_map, default_columns, prefijo):
-    """Validate a report request, store it as InformeExcel and queue it for the Celery worker."""
+def _parametros_informe(request, column_map, default_columns):
+    """Validated parameters of a report request, shared by the preview and the Excel; 400 otherwise."""
     requested = [LEGACY_COLUMN_ALIASES.get(key, key) for key in request.data.get("columnas", default_columns)]
     columns = list(dict.fromkeys(key for key in requested if key in column_map))
     if not columns:
-        return Response({"detail": "Seleccione al menos una columna."}, status=status.HTTP_400_BAD_REQUEST)
+        raise ParseError("Seleccione al menos una columna.")
     # A single month (periodo_anio/periodo_mes) is still accepted as a one-month range.
     single = {"anio": request.data.get("periodo_anio"), "mes": request.data.get("periodo_mes")}
     desde = parse_periodo(request.data.get("periodo_desde") or single)
     hasta = parse_periodo(request.data.get("periodo_hasta") or single)
     if not desde or not hasta:
-        return Response({"detail": "Indique mes y año desde y hasta."}, status=status.HTTP_400_BAD_REQUEST)
+        raise ParseError("Indique mes y año desde y hasta.")
     if desde > hasta:
-        return Response({"detail": "El período desde no puede ser posterior al período hasta."}, status=status.HTTP_400_BAD_REQUEST)
+        raise ParseError("El período desde no puede ser posterior al período hasta.")
+    filtros = request.data.get("filtros", {})
+    if not isinstance(filtros, dict):
+        raise ParseError("Filtros no válidos.")
+    return {
+        "columnas": columns, "filtros": filtros,
+        "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]},
+    }
+
+
+def solicitar_informe(request, tipo, column_map, default_columns, prefijo):
+    """Validate a report request, store it as InformeExcel and queue it for the Celery worker."""
+    parametros = _parametros_informe(request, column_map, default_columns)
+    desde, hasta = parametros["periodo_desde"], parametros["periodo_hasta"]
     informe = InformeExcel.objects.create(
-        tipo=tipo, usuario=request.user,
-        parametros_json={
-            "columnas": columns, "filtros": request.data.get("filtros", {}),
-            "periodo_desde": {"anio": desde[0], "mes": desde[1]}, "periodo_hasta": {"anio": hasta[0], "mes": hasta[1]},
-        },
-        nombre_descarga=f"{prefijo}_{desde[0]}-{desde[1]:02d}_a_{hasta[0]}-{hasta[1]:02d}.xlsx",
+        tipo=tipo, usuario=request.user, parametros_json=parametros,
+        nombre_descarga=f"{prefijo}_{desde['anio']}-{desde['mes']:02d}_a_{hasta['anio']}-{hasta['mes']:02d}.xlsx",
     )
     from reportes.tasks import generar_informe
 
@@ -521,6 +534,94 @@ def solicitar_informe(request, tipo, column_map, default_columns, prefijo):
         generar_informe(informe.id)
     informe.refresh_from_db()
     return Response(_informe_json(informe), status=status.HTTP_202_ACCEPTED)
+
+
+# Amounts are text: "1146,35" (DIN TXT), ",07" (DIN TXT, no leading zero) or "1269.29" (MDB and DUS).
+NUMERO_TEXTO = r"^\s*-?([0-9]{1,18}([.,][0-9]*)?|[.,][0-9]+)\s*$"
+MONTO = DecimalField(max_digits=30, decimal_places=6)
+
+
+def numero_sql(text):
+    """SQL number from a text expression; blank or other text counts as NULL, as in to_number."""
+    return Case(When(Regex(text, Value(NUMERO_TEXTO)), then=Cast(Replace(text, Value(","), Value(".")), MONTO)), output_field=MONTO)
+
+
+def _din_texto(label):
+    """DIN field as text: MDB 2015 rows have legacy_fields and no raw_columns."""
+    return Coalesce(
+        KeyTextTransform(LEGACY_DIN_NAMES[label], KeyTransform("legacy_fields", "payload_json")),
+        KeyTextTransform(str(DIN_POSITIONS[label]), KeyTransform("raw_columns", "payload_json")),
+    )
+
+
+def _monto(valor):
+    return round(float(valor or 0), 2)
+
+
+def resumir_totales(qs, cif, fob, cantidad, unidad, grupo_unidad):
+    """Totals of the filtered items, one pass per unit: quantities of different units do not add up."""
+    filas = qs.order_by().annotate(_unidad=unidad).values("_unidad").annotate(_cif=Sum(cif), _fob=Sum(fob), _cantidad=Sum(cantidad))
+    filas = list(filas)
+    glosas = dict(CatalogoCodigo.objects.filter(grupo=grupo_unidad).values_list("codigo", "glosa"))
+    por_unidad = [
+        {"unidad": (fila["_unidad"] or "").strip(), "glosa": glosas.get((fila["_unidad"] or "").strip(), ""), "cantidad": round(float(fila["_cantidad"]), 6)}
+        for fila in filas if fila["_cantidad"] is not None
+    ]
+    return {
+        "cif_usd": _monto(sum(fila["_cif"] or 0 for fila in filas)),
+        "fob_usd": _monto(sum(fila["_fob"] or 0 for fila in filas)),
+        "cantidad": round(sum(item["cantidad"] for item in por_unidad), 6),
+        "cantidades_por_unidad": sorted(por_unidad, key=lambda item: -item["cantidad"]),
+        "documentos": qs.order_by().aggregate(total=Count("numero_ident", distinct=True))["total"],
+    }
+
+
+def totales_importaciones(qs):
+    """CIF and FOB of the matching items, never the DIN totals: "CIF" and "FOB" repeat on every item and also
+    count items the filters left out. The item FOB uses the same proration as the valor_fob column."""
+    cif_item, cif, fob = (numero_sql(_din_texto(label)) for label in ("CIF-ITEM", "CIF", "FOB"))
+    fob_item = Case(When(Q(_din_cif__isnull=False) & ~Q(_din_cif=0), then=F("_din_cif_item") * F("_din_fob") / F("_din_cif")), output_field=MONTO)
+    qs = qs.annotate(_din_cif=cif, _din_fob=fob, _din_cif_item=cif_item)
+    return resumir_totales(qs, F("_din_cif_item"), fob_item, numero_sql(_din_texto("CANT-MERC")), _din_texto("MEDIDA"), "unidades_medida")
+
+
+PREVIEW_PAGE_SIZE = 50
+PREVIEW_MAX_PAGE_SIZE = 200
+# A full import month (~380 thousand items) takes about 8 s, because the amounts are read from payload_json.
+# Above this limit the totals could reach the gunicorn timeout, so the user is asked to narrow the search.
+PREVIEW_MAX_TOTAL_ROWS = 2_000_000
+
+
+def vista_previa(request, column_map, default_columns, filtrar, totales, valores):
+    """One page of the report rows; `totales: false` skips the totals when only the page changes."""
+    parametros = _parametros_informe(request, column_map, default_columns)
+    desde, hasta = parse_periodo(parametros["periodo_desde"]), parse_periodo(parametros["periodo_hasta"])
+    qs = filtrar(parametros["filtros"], desde=desde, hasta=hasta)
+    try:
+        por_pagina = min(max(int(request.data.get("por_pagina", PREVIEW_PAGE_SIZE)), 1), PREVIEW_MAX_PAGE_SIZE)
+    except (TypeError, ValueError):
+        por_pagina = PREVIEW_PAGE_SIZE
+    page = Paginator(qs, por_pagina).get_page(request.data.get("pagina", 1))
+    sin_totales = page.paginator.count > PREVIEW_MAX_TOTAL_ROWS
+    return Response({
+        "columnas": [{"key": key, "label": column_map[key]} for key in parametros["columnas"]],
+        "filas": valores(parametros, list(page.object_list)),
+        "pagina": page.number, "paginas": page.paginator.num_pages, "por_pagina": por_pagina,
+        "registros": page.paginator.count,
+        "totales": totales(qs) if request.data.get("totales", True) and not sin_totales else None,
+        "totales_omitidos": sin_totales,
+    })
+
+
+def _valores_importaciones(parametros, filas):
+    _, _, valores = informe_importaciones_rows(parametros)
+    return [valores(fila) for fila in filas]
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vista_previa_importaciones(request):
+    return vista_previa(request, IMPORT_COLUMN_MAP, DEFAULT_COLUMNS, _filtered_importaciones, totales_importaciones, _valores_importaciones)
 
 
 @api_view(["POST"])

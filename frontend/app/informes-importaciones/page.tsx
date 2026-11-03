@@ -21,12 +21,12 @@ async function importadorLabels(ids: string[]) {
 const universe: FilterSpec[] = [
   { type: 'partidas', key: 'partidas' },
   { type: 'remote', key: 'importadores', label: 'Importador', placeholder: 'Nombre o RUT del importador propuesto', search: searchImportadores, labelsFor: importadorLabels },
-  { type: 'terms', key: 'marcas', label: 'Marca', placeholder: 'Ej. SAMSUNG — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados.' },
-  { type: 'terms', key: 'productos', label: 'Producto', placeholder: 'Ej. neumáticos — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados.' },
+  { type: 'terms', key: 'marcas', label: 'Marca', placeholder: 'Ej. SAMSUNG — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados; junto con Producto, deben cumplirse ambos.' },
+  { type: 'terms', key: 'productos', label: 'Producto', placeholder: 'Ej. neumáticos — Enter para agregar', help: 'Busca en Mercadería, Marca, Variedad y Otros 1 a 4. Varios términos suman resultados; junto con Marca, deben cumplirse ambos.' },
 ]
 
-// Filters beyond the main universe; kept so existing rubros keep working.
-const otherFilters: FilterSpec[] = [
+// Out of the universe; existing rubros that use them keep working.
+const rubroFilters: FilterSpec[] = [
   { type: 'catalog', key: 'pais_origen_codigo', label: 'País de origen', placeholder: 'Buscar país por nombre o código', catalog: 'PAISES' },
   { type: 'catalog', key: 'pais_adquisicion_codigo', label: 'País de adquisición', placeholder: 'Buscar país por nombre o código', catalog: 'PAISES' },
   { type: 'catalog', key: 'aduana_codigo', label: 'Aduana', placeholder: 'Buscar aduana por nombre o código', catalog: 'ADUANAS' },
@@ -36,5 +36,5 @@ const otherFilters: FilterSpec[] = [
 ]
 
 export default function InformesImportacionesPage() {
-  return <ReportBuilder kind="importaciones" title="Consulta de Importaciones" lead="Define los datos de salida y limita el universo antes de generar tu archivo Excel." columnSearchPlaceholder="Buscar campo DIN, código o descripción" universe={universe} otherFilters={{ summary: 'Otros filtros (país, aduana, comuna, vía, régimen)', filters: otherFilters }} />
+  return <ReportBuilder kind="importaciones" title="Consulta de Importaciones" lead="Define los datos de salida y limita el universo, revisa los resultados en pantalla y luego genera tu archivo Excel." columnSearchPlaceholder="Buscar campo DIN, código o descripción" universe={universe} rubroFilters={rubroFilters} />
 }
