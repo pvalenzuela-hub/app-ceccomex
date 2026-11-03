@@ -23,7 +23,8 @@ FEBRERO = {"periodo_desde": {"anio": 2026, "mes": 2}, "periodo_hasta": {"anio": 
 def din_payload(**values):
     raw = [""] * len(DIN_LABELS)
     for label, value in values.items():
-        raw[DIN_LABELS.index(label.replace("_", "-"))] = value
+        # CIF_ITEM stands for CIF-ITEM; PA_ORIG is the real name.
+        raw[DIN_LABELS.index(label if label in DIN_LABELS else label.replace("_", "-"))] = value
     return {"raw_columns": raw}
 
 
@@ -240,3 +241,36 @@ class FiltrosColumnaImportacionesTests(VistaPreviaBase):
             download = self.client.get(f"/api/reportes/informes/{informe['id']}/descargar/")
             rows = list(load_workbook(io.BytesIO(b"".join(download.streaming_content)), read_only=True).active.iter_rows(values_only=True))
         self.assertEqual(rows[1:], [("B",)])
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class CodigosDinCorridosTests(VistaPreviaBase):
+    """Rows loaded before the parser followed the DIN positions: 13102 is a comuna, 96 a via."""
+
+    @classmethod
+    def setUpTestData(cls):
+        source = ArchivoCarga.objects.create(nombre_archivo="x", archivo="cargas/x.zip", tipo_archivo="IMP")
+        common = {"archivo_origen": source, "periodo_anio": 2026, "periodo_mes": 2}
+        Importacion.objects.create(**common, numero_ident="VIEJA", aduana_codigo="13102", pais_origen_codigo="96", payload_json=din_payload(ADU="39", PA_ORIG="336"))
+        Importacion.objects.create(**common, numero_ident="MDB", aduana_codigo="", pais_origen_codigo="", payload_json={"legacy_fields": {"COD_ADU": "48", "PAI_ORI": "219"}})
+        CatalogoCodigo.objects.create(grupo="aduanas", codigo="39", glosa="SAN ANTONIO")
+        CatalogoCodigo.objects.create(grupo="aduanas", codigo="48", glosa="METROPOLITANA")
+        CatalogoCodigo.objects.create(grupo="paises", codigo="336", glosa="CHINA")
+        CatalogoCodigo.objects.create(grupo="paises", codigo="219", glosa="PERU")
+
+    def test_columns_show_the_code_of_the_file_line(self):
+        columnas = ["numero_ident", "aduana_codigo", "aduana_glosa", "pais_origen_codigo", "pais_origen_glosa"]
+        filas = {fila[0]: fila[1:] for fila in self.post(IMPORT_URL, columnas=columnas).json()["filas"]}
+        self.assertEqual(filas["VIEJA"], ["39", "SAN ANTONIO", "336", "CHINA"])
+        self.assertEqual(filas["MDB"], ["48", "METROPOLITANA", "219", "PERU"])
+
+    def test_filters_of_saved_rubros_and_columns_use_the_same_code(self):
+        def idents(**body):
+            return sorted(fila[0] for fila in self.post(IMPORT_URL, **body).json()["filas"])
+
+        self.assertEqual(idents(filtros={"aduana_codigo": ["39"]}), ["VIEJA"])
+        self.assertEqual(idents(filtros={"pais_origen_codigo": ["219"]}), ["MDB"])
+        self.assertEqual(idents(filtros={"aduana_codigo": ["13102"]}), [])
+        self.assertEqual(idents(filtros_columnas={"aduana_glosa": "san antonio"}), ["VIEJA"])
+        self.assertEqual(idents(filtros_columnas={"pais_origen_glosa": "peru"}), ["MDB"])
+        self.assertEqual(idents(filtros_columnas={"pais_origen_codigo": "336"}), ["VIEJA"])

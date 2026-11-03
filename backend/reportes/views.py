@@ -2,7 +2,7 @@ import math
 
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, TextField, Value, When
 from django.db.models.fields.json import KeyTextTransform, KeyTransform
-from django.db.models.functions import Cast, Coalesce, Replace
+from django.db.models.functions import Cast, Coalesce, NullIf, Replace
 from django.db.models.lookups import Regex
 from django.core.paginator import Paginator
 from django.http import FileResponse
@@ -228,6 +228,19 @@ def _period_range_q(desde, hasta):
     )
 
 
+# Rows loaded before the parser followed the official DIN positions keep other data in these fields, so the
+# code comes from the file line; the field is only a fallback for rows without it.
+CODIGOS_DIN = {"aduana_codigo": "ADU", "pais_origen_codigo": "PA_ORIG"}
+
+
+def _codigo_din_sql(field):
+    label = CODIGOS_DIN[field]
+    legacy = KeyTextTransform(LEGACY_DIN_NAMES[label], KeyTransform("legacy_fields", "payload_json"))
+    raw = KeyTextTransform(str(DIN_POSITIONS[label]), KeyTransform("raw_columns", "payload_json"))
+    blank = Value("")
+    return Coalesce(NullIf(legacy, blank, output_field=TextField()), NullIf(raw, blank, output_field=TextField()), F(field), output_field=TextField())
+
+
 def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=None, hasta=None):
     qs = Importacion.objects.select_related("importador_probable_sugerido").order_by("-creado", "-id")
     if desde and hasta:
@@ -236,10 +249,14 @@ def _filtered_importaciones(filters, periodo_anio=None, periodo_mes=None, desde=
         qs = qs.filter(periodo_anio=periodo_anio)
     if periodo_mes:
         qs = qs.filter(periodo_mes=periodo_mes)
-    for field in ("aduana_codigo", "comuna_importador_codigo", "pais_origen_codigo", "via_transporte_codigo"):
+    for field in ("comuna_importador_codigo", "via_transporte_codigo"):
         values = _selected_values(filters.get(field, []))
         if values:
             qs = qs.filter(**{f"{field}__in": values})
+    for field in CODIGOS_DIN:
+        values = _selected_values(filters.get(field, []))
+        if values:
+            qs = qs.alias(**{f"_{field}": _codigo_din_sql(field)}).filter(**{f"_{field}__in": values})
     tarifas = _selected_values(filters.get("partidas", []))
     if tarifas:
         qs = qs.filter(partida_arancelaria_codigo__in=tarifas)
@@ -342,9 +359,17 @@ def _text_column_value(row, key, catalogos):
             return legacy_value(legacy, LEGACY_DIN_BY_INDEX[index]) if index in LEGACY_DIN_BY_INDEX else ""
         return raw[index] if index < len(raw) else ""
 
+    def codigo_din(field):
+        return raw_value(DIN_POSITIONS[CODIGOS_DIN[field]]) or getattr(row, field)
+
+    if key in CODIGOS_DIN:
+        return codigo_din(key)
     if key in GLOSA_COLUMNS:
         grupo, source = GLOSA_COLUMNS[key]
-        codigo = raw_value(source) if isinstance(source, int) else getattr(row, source)
+        if isinstance(source, int):
+            codigo = raw_value(source)
+        else:
+            codigo = codigo_din(source) if source in CODIGOS_DIN else getattr(row, source)
         return catalogos.get(grupo, {}).get(str(codigo), "")
     if key == "partida_glosa":
         return catalogos.get("partidas", {}).get(row.partida_arancelaria_codigo, "")
@@ -518,6 +543,8 @@ def _filtrar_columna_sql(qs, nombre, key, term):
             glosas = CatalogoCodigo.objects.filter(grupo=grupo).values_list("codigo", "glosa")
         buscado = normalizar(term)
         codigos = [codigo for codigo, glosa in glosas if buscado in normalizar(glosa)]
+        if source in CODIGOS_DIN:
+            return qs.alias(**{nombre: _codigo_din_sql(source)}).filter(**{f"{nombre}__in": codigos})
         if isinstance(source, str):
             return qs.filter(**{f"{source}__in": codigos})
         return qs.alias(**{nombre: _din_texto_indice(source)}).filter(**{f"{nombre}__in": codigos})
@@ -529,6 +556,8 @@ def _filtrar_columna_sql(qs, nombre, key, term):
         return _contiene(qs, nombre, Coalesce(legacy, _din_texto_indice(DIN_POSITIONS["NUM_UNICO_IMPORTADOR"])), term)
     if key in LEGACY_ONLY_COLUMNS:
         return _contiene(qs, nombre, KeyTextTransform(LEGACY_ONLY_COLUMNS[key][0], KeyTransform("legacy_fields", "payload_json")), term)
+    if key in CODIGOS_DIN:
+        return _contiene(qs, nombre, _codigo_din_sql(key), term)
     if key in ("periodo_anio", "periodo_mes"):
         # "1" must find January, not also October to December.
         return qs.filter(**{key: int(term)}) if term.isdigit() else qs.none()
