@@ -39,7 +39,6 @@ export default function TopNav() {
         <Link href="/informes-importaciones">Consulta de Importaciones</Link>
         <Link href="/informes-exportaciones">Consulta de Exportaciones</Link>
         <Link href="/catalogos">Catálogos</Link>
-        <Link href="/reportes">Reportes</Link>
         {isSuperuser ? <Link href="/usuarios">Usuarios</Link> : null}
       </div>
       {isSuperuser ? <div className="nav-presence"><i />{connectedUsers ?? '…'} conectados</div> : null}
