@@ -27,7 +27,7 @@ from reportes.serializers import ImportadorProbableSerializer, ReporteSectorialD
 # (doc-req/import/descripcion-y-estructura-de-datos-din.xlsx, zero-based). The default columns come
 # first, in the order the report shows them.
 IMPORT_DEFAULT_COLUMNS = [
-    ("aduana_glosa", "Aduana"), ("raw:39", "Fecha (FECACEP)"), ("periodo_mes", "Mes"), ("importador_rut", "RUT"),
+    ("aduana_glosa", "Aduana"), ("raw:39", "Fecha (FECACEP)"), ("periodo_mes", "Mes"), ("importador_rut", "RUT/N° único importador"),
     ("importador_probable", "Probable Importador"), ("pais_origen_glosa", "País de Origen"),
     ("pa_adq_glosa", "País de Adquisición"), ("pto_emb_glosa", "Puerto de Embarque"), ("via_transporte_glosa", "Vía"),
     ("form_pago_glosa", "Forma de Pago"), ("raw:159", "% Derechos (ADVAL-ALA)"), ("raw:161", "Derechos Pagados (VALAD)"),
