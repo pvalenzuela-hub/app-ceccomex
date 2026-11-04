@@ -239,6 +239,12 @@ class ColumnasPorDefectoTests(TestCase):
         self.assertEqual([_column_value(txt, key, catalogos) for key in ("importador_rut", "iva_item", "partida_glosa")], ["11198", 639.16, "PAPELES PARA ESCRITURA"])
         self.assertEqual([_column_value(mdb, key, {}) for key in ("importador_rut", "iva_item")], ["76123456", 19.5])
 
+        known = SimpleNamespace(rut="76999888", dv="5")
+        anonymous = SimpleNamespace(rut="11198", dv="")
+        for importer, rut, dv in ((known, "76999888", "5"), (anonymous, "11198", ""), (None, "11198", "")):
+            linked = SimpleNamespace(payload_json={"raw_columns": raw}, importador_probable_sugerido=importer)
+            self.assertEqual([_column_value(linked, key, {}) for key in ("importador_rut", "importador_dv")], [rut, dv])
+
         PartidaArancelaria.objects.create(codigo="48025510", glosa="PAPELES")
         _, _, row_function = informe_importaciones_rows({"columnas": ["partida_glosa"], "periodo_desde": {"anio": 2026, "mes": 1}, "periodo_hasta": {"anio": 2026, "mes": 1}})
         self.assertEqual(row_function(txt), ["PAPELES"])

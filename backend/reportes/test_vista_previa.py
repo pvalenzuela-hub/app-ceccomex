@@ -197,6 +197,8 @@ class FiltrosColumnaImportacionesTests(VistaPreviaBase):
         self.assertEqual(self.idents(importador_probable="frutera"), ["B"])
         self.assertEqual(self.idents(importador_probable="sony"), ["A", "A"])
         self.assertEqual(self.idents(importador_rut="77000"), ["B"])
+        self.assertEqual(self.idents(importador_rut="76123456"), ["A", "A"])
+        self.assertEqual(self.idents(importador_dv="0"), ["A", "A"])
         self.assertEqual(self.idents(periodo_mes="2"), ["A", "A", "B"])
         self.assertEqual(self.idents(periodo_mes="12"), [])
 

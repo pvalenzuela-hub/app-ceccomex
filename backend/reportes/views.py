@@ -107,7 +107,7 @@ IMPORT_COLUMNS.extend(
 # MDB 2015 data without a DIN TXT position (the DIN only carries an anonymous NUM_UNICO_IMPORTADOR).
 LEGACY_ONLY_COLUMNS = {
     "importador_nombre_declarado": ("IMPORT", "Nombre importador declarado (solo 2015)"),
-    "importador_dv": ("DV", "DV importador (solo 2015)"),
+    "importador_dv": ("DV", "DV importador"),
     "zona_economica": ("ZON_ECO", "Zona económica (solo 2015)"),
     "clave_economica": ("CLA_ECO", "Clave económica (solo 2015)"),
 }
@@ -355,8 +355,14 @@ def _text_column_value(row, key, catalogos):
     if key == "importador_probable":
         return row.importador_probable_sugerido.nombre if row.importador_probable_sugerido else legacy.get("IMPORT", "")
     if key == "importador_rut":
-        # The DIN TXT only carries the anonymous NUM_UNICO_IMPORTADOR in place of the RUT.
-        return legacy.get("RUT", "") if legacy else row.payload_json.get("raw_columns", [""] * 7)[6]
+        if legacy:
+            return legacy.get("RUT", "")
+        # The DIN TXT only carries the anonymous NUM_UNICO_IMPORTADOR; the RUT is known once a report links the number.
+        importador = row.importador_probable_sugerido
+        return importador.rut if importador and importador.dv else row.payload_json.get("raw_columns", [""] * 7)[6]
+    if key == "importador_dv":
+        importador = row.importador_probable_sugerido
+        return legacy.get("DV", "") if legacy else importador.dv if importador else ""
     if key in LEGACY_ONLY_COLUMNS:
         return legacy.get(LEGACY_ONLY_COLUMNS[key][0], "")
     if key in ITEM_COLUMNS:
@@ -558,7 +564,11 @@ def columna_importacion(key, parametros=None):
         return ColumnaTexto(Coalesce("importador_probable_sugerido__nombre", legacy, output_field=TextField()))
     if key == "importador_rut":
         legacy = KeyTextTransform("RUT", KeyTransform("legacy_fields", "payload_json"))
-        return ColumnaTexto(Coalesce(legacy, _din_texto_indice(DIN_POSITIONS["NUM_UNICO_IMPORTADOR"]), output_field=TextField()))
+        rut_conocido = Case(When(importador_probable_sugerido__dv__gt="", then=F("importador_probable_sugerido__rut")), default=_din_texto_indice(DIN_POSITIONS["NUM_UNICO_IMPORTADOR"]), output_field=TextField())
+        return ColumnaTexto(Coalesce(legacy, rut_conocido, output_field=TextField()))
+    if key == "importador_dv":
+        legacy = KeyTextTransform("DV", KeyTransform("legacy_fields", "payload_json"))
+        return ColumnaTexto(Coalesce(legacy, "importador_probable_sugerido__dv", output_field=TextField()))
     if key in LEGACY_ONLY_COLUMNS:
         return ColumnaTexto(KeyTextTransform(LEGACY_ONLY_COLUMNS[key][0], KeyTransform("legacy_fields", "payload_json")))
     if key in ("periodo_anio", "periodo_mes"):
