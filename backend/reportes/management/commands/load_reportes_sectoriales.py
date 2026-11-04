@@ -29,6 +29,7 @@ class Command(BaseCommand):
                 raise CommandError(f"No existe: {path}")
             self.load_file(path)
         call_command("rebuild_perfiles_importadores")
+        call_command("recalcular_importadores_din", "--aplicar")
 
     def load_file(self, path):
         workbook = load_workbook(path, read_only=True, data_only=True)

@@ -9,6 +9,7 @@ from django.test import TestCase
 from comercio.models import ArchivoCarga, Importacion
 from comercio.processing import materialize_final_rows, store_staging_rows
 from comercio.processing import din_importers_by_number
+from comercio.vinculo_importadores import importadores_del_mes, recalcular_periodo
 from reportes.models import ImportadorProbable, ReporteSectorial, ReporteSectorialDetalle
 
 FIELDS = (
@@ -18,9 +19,12 @@ FIELDS = (
 )
 
 
-def sector_row(importer, rut, mes, anio=2026, dv="", nro_linea=1):
+def sector_row(importer, rut, mes, anio=2026, dv="", nro_linea=1, fecha="", partida="", cif=""):
     report, _ = ReporteSectorial.objects.get_or_create(nombre_archivo="r.xlsx", hoja_base="Base", defaults={"rubro": "R", "periodo_anio": anio, "periodo_mes": 3})
-    return ReporteSectorialDetalle.objects.create(reporte=report, nro_linea=nro_linea, importador_probable=importer, rut=rut, dv=dv, payload_json={"MES": mes})
+    return ReporteSectorialDetalle.objects.create(
+        reporte=report, nro_linea=nro_linea, importador_probable=importer, rut=rut, dv=dv,
+        partida_arancelaria_codigo=partida, valor_cif=cif, payload_json={"MES": mes, "FECHA": fecha},
+    )
 
 
 def din_line(numero="23441803", unico="10998", item="1", fecaccp="19032026", columns=178):
@@ -76,6 +80,61 @@ class ImportacionesTxtCommandTests(TestCase):
         out = io.StringIO()
         call_command("import_importaciones_txt", str(self.zip([din_line(fecaccp="19022026")], "febrero.zip")), stdout=out)
         self.assertIsNone(Importacion.objects.get(periodo_mes=2).importador_probable_sugerido)
+
+
+class VinculoPorCoincidenciaTests(TestCase):
+    def din(self, numero, fecha="10032026", partida="85444991", cif="118,48", mes=3):
+        raw = [""] * 178
+        raw[6], raw[39], raw[158] = numero, fecha, cif
+        source = ArchivoCarga.objects.create(nombre_archivo=f"{numero}-{partida}-{cif}", archivo="cargas/x.zip", tipo_archivo="IMP", periodo_anio=2026, periodo_mes=mes)
+        return Importacion.objects.create(
+            archivo_origen=source, periodo_anio=2026, periodo_mes=mes, numero_ident=numero,
+            partida_arancelaria_codigo=partida, payload_json={"raw_columns": raw},
+        )
+
+    def empresa(self, nombre, rut, **kwargs):
+        importer, _ = ImportadorProbable.objects.get_or_create(rut=rut, dv="5", nombre=nombre)
+        return sector_row(importer, rut, kwargs.pop("mes", "Marzo"), dv="5", nro_linea=ReporteSectorialDetalle.objects.count() + 1, **kwargs).importador_probable
+
+    def test_links_every_row_of_the_number_when_one_number_holds_all_report_rows(self):
+        alfa = self.empresa("ALFA", "76111111", fecha="10032026", partida="85444991", cif="118.48")
+        reported = self.din("100")
+        same_number = self.din("100", partida="99999999", cif="5,00")
+        other = self.din("200", cif="7,00")
+        recalcular_periodo(2026, 3)
+        for row, expected in ((reported, alfa), (same_number, alfa), (other, None)):
+            row.refresh_from_db()
+            self.assertEqual(row.importador_probable_sugerido, expected)
+
+    def test_second_report_row_breaks_a_tie_and_a_lasting_tie_links_nothing(self):
+        alfa = self.empresa("ALFA", "76111111", fecha="10032026", partida="85444991", cif="118.48")
+        self.empresa("ALFA", "76111111", fecha="11032026", partida="85444992", cif="9.10")
+        self.din("100"), self.din("200"), self.din("100", fecha="11032026", partida="85444992", cif="9,10")
+        self.assertEqual(importadores_del_mes(2026, 3), {"100": alfa})
+        Importacion.objects.filter(numero_ident="100", partida_arancelaria_codigo="85444992").update(numero_ident="200")
+        self.din("100", fecha="11032026", partida="85444992", cif="9,10")
+        self.assertEqual(importadores_del_mes(2026, 3), {})
+
+    def test_number_claimed_by_two_companies_and_other_months_link_nothing(self):
+        self.empresa("ALFA", "76111111", fecha="10032026", partida="85444991", cif="118.48")
+        self.empresa("BETA", "76222222", fecha="10032026", partida="85444991", cif="118.48")
+        self.empresa("GAMMA", "76333333", mes="Febrero", fecha="10032026", partida="85444991", cif="118.48")
+        self.din("100")
+        self.assertEqual(importadores_del_mes(2026, 3), {})
+
+    def test_report_that_lists_the_number_wins_over_a_match(self):
+        self.empresa("ALFA", "76111111", fecha="10032026", partida="85444991", cif="118.48")
+        beta = ImportadorProbable.objects.create(rut="100", dv="", nombre="BETA")
+        sector_row(beta, "100", "Marzo", nro_linea=99)
+        self.din("100")
+        self.assertEqual(importadores_del_mes(2026, 3), {"100": beta})
+
+    def test_loading_a_sector_report_sees_the_loaded_din_month(self):
+        alfa = self.empresa("ALFA", "76111111", fecha="10032026", partida="85444991", cif="118.48")
+        row = self.din("100")
+        call_command("recalcular_importadores_din", "--aplicar", stdout=io.StringIO())
+        row.refresh_from_db()
+        self.assertEqual(row.importador_probable_sugerido, alfa)
 
 
 class ImportadoresPorMesTests(TestCase):

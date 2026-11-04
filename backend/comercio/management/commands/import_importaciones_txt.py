@@ -15,6 +15,7 @@ from django.db import connection, transaction
 from comercio.busqueda import texto_producto_importacion
 from comercio.models import ArchivoCarga, Importacion
 from comercio.processing import din_importers_by_number, normalize_rut, parse_txt_line
+from comercio.vinculo_importadores import recalcular_periodo
 
 
 DIN_COLUMNS = 178
@@ -166,6 +167,7 @@ class Command(BaseCommand):
             _, summary = read_member(archive, member, on_batch=insert, batch_size=options["batch_size"], importers=importers)
             if inserted != summary["filas"] or existing.count() != inserted:
                 raise ValueError(f"Conciliación fallida en {member}: {inserted} insertadas de {summary['filas']} leídas")
+            recalcular_periodo(*periodo)
             source.estado = "PROCESADO"
             source.total_registros = source.total_procesados = source.total_ok = inserted
             source.observacion += f" | {inserted} filas, {summary['incompletas']} truncadas en origen, {summary['con_importador']} con importador"

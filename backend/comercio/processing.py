@@ -173,3 +173,6 @@ def materialize_final_rows(archivo_carga: ArchivoCarga) -> None:
                 total_procesados=processed,
                 observacion=(archivo_carga.observacion + " | ").strip(" |") + f"Materializando importaciones: {processed}/{staging_rows.count()}",
             )
+        from comercio.vinculo_importadores import recalcular_periodo
+
+        recalcular_periodo(archivo_carga.periodo_anio, archivo_carga.periodo_mes)
