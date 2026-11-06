@@ -1,4 +1,5 @@
 import math
+import time
 
 from django.db.models import Case, Count, DecimalField, F, Q, Sum, TextField, Value, When
 from django.db.models.fields.json import KeyTextTransform, KeyTransform
@@ -14,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
+from core.actividad import modulo_de, registrar
 from comercio.busqueda import normalizar
 from comercio.descripcion import campos_descripcion
 from comercio.legacy_mdb import LEGACY_COLUMNS
@@ -459,7 +461,9 @@ def _rubros(request, tipo):
     serializer.is_valid(raise_exception=True)
     if RubroImportacion.objects.filter(tipo=tipo, nombre=serializer.validated_data["nombre"]).exists():
         return Response({"nombre": ["Ya existe un rubro con ese nombre."]}, status=status.HTTP_400_BAD_REQUEST)
-    return Response(RubroImportacionSerializer(serializer.save(tipo=tipo)).data, status=status.HTTP_201_CREATED)
+    rubro = serializer.save(tipo=tipo)
+    registrar(request, "rubro_creado", modulo_de(request), rubro=rubro.nombre)
+    return Response(RubroImportacionSerializer(rubro).data, status=status.HTTP_201_CREATED)
 
 
 def _rubro_detalle(request, rubro_id, tipo):
@@ -468,12 +472,15 @@ def _rubro_detalle(request, rubro_id, tipo):
         return Response(status=status.HTTP_404_NOT_FOUND)
     if request.method == "DELETE":
         rubro.delete()
+        registrar(request, "rubro_eliminado", modulo_de(request), rubro=rubro.nombre)
         return Response(status=status.HTTP_204_NO_CONTENT)
     serializer = RubroImportacionSerializer(rubro, data=request.data)
     serializer.is_valid(raise_exception=True)
     if RubroImportacion.objects.filter(tipo=tipo, nombre=serializer.validated_data["nombre"]).exclude(id=rubro.id).exists():
         return Response({"nombre": ["Ya existe un rubro con ese nombre."]}, status=status.HTTP_400_BAD_REQUEST)
-    return Response(RubroImportacionSerializer(serializer.save()).data)
+    rubro = serializer.save()
+    registrar(request, "rubro_modificado", modulo_de(request), rubro=rubro.nombre)
+    return Response(RubroImportacionSerializer(rubro).data)
 
 
 @api_view(["GET", "POST"])
@@ -650,7 +657,17 @@ def solicitar_informe(request, tipo, column_map, default_columns, prefijo):
     except OperationalError:
         generar_informe(informe.id)
     informe.refresh_from_db()
+    registrar(request, "excel_solicitado", modulo_de(request), informe=informe.id, **_consulta_detalle(parametros))
     return Response(_informe_json(informe), status=status.HTTP_202_ACCEPTED)
+
+
+def _consulta_detalle(parametros):
+    """What the activity log keeps of a query: period, filters used and how many columns."""
+    return {
+        "periodo_desde": parametros["periodo_desde"], "periodo_hasta": parametros["periodo_hasta"],
+        "filtros": {key: value for key, value in parametros["filtros"].items() if value},
+        "filtros_columnas": parametros["filtros_columnas"], "columnas": len(parametros["columnas"]),
+    }
 
 
 # Amounts are text: "1146,35" (DIN TXT), ",07" (DIN TXT, no leading zero) or "1269.29" (MDB and DUS).
@@ -711,6 +728,7 @@ PREVIEW_MAX_TOTAL_ROWS = 2_000_000
 
 def vista_previa(request, column_map, default_columns, consulta, totales, valores, columna):
     """One page of the report rows; `totales: false` skips the totals when only the page changes."""
+    inicio = time.monotonic()
     parametros = _parametros_informe(request, column_map, default_columns)
     try:
         qs = consulta(parametros)
@@ -722,14 +740,22 @@ def vista_previa(request, column_map, default_columns, consulta, totales, valore
         por_pagina = PREVIEW_PAGE_SIZE
     page = Paginator(qs, por_pagina).get_page(request.data.get("pagina", 1))
     sin_totales = page.paginator.count > PREVIEW_MAX_TOTAL_ROWS
-    return Response({
+    con_totales = request.data.get("totales", True) and not sin_totales
+    respuesta = Response({
         "columnas": [{"key": key, "label": column_map[key], "filtro": "lista" if columna(key, parametros).lista else "texto"} for key in parametros["columnas"]],
         "filas": valores(parametros, list(page.object_list)),
         "pagina": page.number, "paginas": page.paginator.num_pages, "por_pagina": por_pagina,
         "registros": page.paginator.count,
-        "totales": totales(qs) if request.data.get("totales", True) and not sin_totales else None,
+        "totales": totales(qs) if con_totales else None,
         "totales_omitidos": sin_totales,
     })
+    # A new query or new column filters ask for totals again; turning pages does not, so it is not logged.
+    if request.data.get("totales", True):
+        registrar(
+            request, "consulta", modulo_de(request), registros=page.paginator.count,
+            duracion_ms=round((time.monotonic() - inicio) * 1000), **_consulta_detalle(parametros),
+        )
+    return respuesta
 
 
 def valores_vista_previa(request, column_map, default_columns, consulta, columna):
@@ -797,6 +823,10 @@ def informe_descargar(request, informe_id: int):
     informe = _own_informe(request, informe_id)
     if not informe or informe.estado != "LISTO" or not informe_path(informe).is_file():
         return Response({"detail": "Informe no disponible."}, status=status.HTTP_404_NOT_FOUND)
+    registrar(
+        request, "excel_descargado", "exportaciones" if informe.tipo == "EXP" else "importaciones",
+        informe=informe.id, filas=informe.filas_total, archivo=informe.nombre_descarga,
+    )
     return FileResponse(
         informe_path(informe).open("rb"), as_attachment=True, filename=informe.nombre_descarga,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

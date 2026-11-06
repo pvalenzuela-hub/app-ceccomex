@@ -4,6 +4,27 @@ from rest_framework.pagination import PageNumberPagination
 
 from catalogos.models import CatalogoCodigo, PartidaArancelaria
 from catalogos.serializers import CatalogoCodigoSerializer, PartidaArancelariaSerializer
+from core.actividad import registrar
+
+
+class RegistroCambiosMixin:
+    """Logs every change to a catalog row."""
+
+    tabla = ""
+
+    def _registrar(self, accion, instance):
+        registro = " ".join(str(getattr(instance, campo, "")) for campo in ("grupo", "codigo", "glosa")).strip()
+        registrar(self.request, accion, "catalogos", tabla=self.tabla, registro=registro[:200])
+
+    def perform_create(self, serializer):
+        self._registrar("catalogo_creado", serializer.save())
+
+    def perform_update(self, serializer):
+        self._registrar("catalogo_modificado", serializer.save())
+
+    def perform_destroy(self, instance):
+        self._registrar("catalogo_eliminado", instance)
+        instance.delete()
 
 
 class CatalogPagination(PageNumberPagination):
@@ -12,7 +33,8 @@ class CatalogPagination(PageNumberPagination):
     max_page_size = 100
 
 
-class CatalogoCodigoViewSet(ModelViewSet):
+class CatalogoCodigoViewSet(RegistroCambiosMixin, ModelViewSet):
+    tabla = "Códigos"
     serializer_class = CatalogoCodigoSerializer
     pagination_class = CatalogPagination
 
@@ -27,7 +49,8 @@ class CatalogoCodigoViewSet(ModelViewSet):
         return queryset
 
 
-class PartidaArancelariaViewSet(ModelViewSet):
+class PartidaArancelariaViewSet(RegistroCambiosMixin, ModelViewSet):
+    tabla = "Partidas arancelarias"
     serializer_class = PartidaArancelariaSerializer
     pagination_class = CatalogPagination
 

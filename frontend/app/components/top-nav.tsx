@@ -40,6 +40,7 @@ export default function TopNav() {
         <Link href="/informes-exportaciones">Consulta de Exportaciones</Link>
         <Link href="/catalogos">Catálogos</Link>
         {isSuperuser ? <Link href="/usuarios">Usuarios</Link> : null}
+        {isSuperuser ? <Link href="/actividad">Actividad</Link> : null}
       </div>
       {isSuperuser ? <div className="nav-presence"><i />{connectedUsers ?? '…'} conectados</div> : null}
       <button className="nav-login link-button" type="button" onClick={() => void logout()}>Salir</button>

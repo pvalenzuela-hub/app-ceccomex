@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core.views import cambiar_contrasena_usuario, eliminar_usuario, health_check, login_check, logout_view, presencia, session_user, usuarios, usuarios_conectados
+from core.views import actividad, actividad_excel, cambiar_contrasena_usuario, eliminar_usuario, health_check, login_check, logout_view, presencia, session_user, usuarios, usuarios_conectados
 
 
 urlpatterns = [path("health/", health_check, name="core-health")]
@@ -12,3 +12,5 @@ urlpatterns += [path("usuarios-conectados/", usuarios_conectados, name="usuarios
 urlpatterns += [path("usuarios/", usuarios, name="usuarios")]
 urlpatterns += [path("usuarios/<int:user_id>/contrasena/", cambiar_contrasena_usuario, name="cambiar-contrasena-usuario")]
 urlpatterns += [path("usuarios/<int:user_id>/", eliminar_usuario, name="eliminar-usuario")]
+urlpatterns += [path("actividad/", actividad, name="actividad")]
+urlpatterns += [path("actividad/excel/", actividad_excel, name="actividad-excel")]

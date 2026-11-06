@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from kombu.exceptions import OperationalError
 
 from comercio.models import ArchivoCarga, ArchivoCargaStaging
+from core.actividad import registrar
 from comercio.processing import materialize_final_rows, store_staging_rows
 from comercio.tasks import process_export_archive, process_uploaded_archive
 from comercio.dus_txt import TIPOS as EXPORT_TIPOS
@@ -19,6 +20,18 @@ from comercio.serializers import (
 
 @api_view(["POST"])
 def upload_archivo(request):
+    respuesta = _procesar_carga(request)
+    datos = respuesta.data if isinstance(respuesta.data, dict) else {}
+    archivo = request.data.get("archivo")
+    registrar(
+        request, "carga_archivo", "cargas", archivo=datos.get("nombre_archivo") or getattr(archivo, "name", ""),
+        tipo=datos.get("tipo_archivo") or request.data.get("tipo_archivo", ""), estado=datos.get("estado") or "ERROR",
+        carga=datos.get("id"), codigo_http=respuesta.status_code,
+    )
+    return respuesta
+
+
+def _procesar_carga(request):
     serializer = ArchivoCargaSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
