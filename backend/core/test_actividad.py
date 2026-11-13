@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from openpyxl import load_workbook
 
-from core.models import RegistroActividad
+from core.models import PresenciaUsuario, RegistroActividad
 
 PREVIEW = "/api/reportes/importaciones/vista-previa/"
 QUERY = {"columnas": ["numero_ident"], "periodo_desde": {"anio": 2026, "mes": 3}, "periodo_hasta": {"anio": 2026, "mes": 3}, "filtros": {"marcas": ["SONY"], "productos": []}}
@@ -70,6 +70,18 @@ class RegistroActividadTests(TestCase):
         response = self.client.get("/api/core/actividad/excel/")
         sheet = load_workbook(io.BytesIO(b"".join(response.streaming_content))).active
         self.assertEqual([cell.value for cell in sheet[2]][1:4], ["sandra", "Consulta", "importaciones"])
+
+    def test_returning_with_an_open_session_counts_as_a_visit(self):
+        self.client.force_login(self.user)
+        self.client.post("/api/core/presencia/")
+        self.client.post("/api/core/presencia/")
+        self.assertEqual(acciones(), [("sandra", "visita")])
+        PresenciaUsuario.objects.update(last_seen=timezone.now() - timedelta(hours=2))
+        self.client.post("/api/core/presencia/")
+        self.assertEqual(acciones(), [("sandra", "visita"), ("sandra", "visita")])
+        self.client.force_login(self.admin)
+        resumen = self.client.get("/api/core/actividad/").json()["resumen"]
+        self.assertEqual([(row["usuario_nombre"], row["ingresos"]) for row in resumen], [("sandra", 2)])
 
     def test_login_removes_entries_older_than_a_year(self):
         viejo = RegistroActividad.objects.create(usuario_nombre="sandra", accion="consulta")

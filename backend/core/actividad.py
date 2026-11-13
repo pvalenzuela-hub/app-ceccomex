@@ -15,6 +15,7 @@ RETENCION_DIAS = 365
 ACCIONES = {
     "login": "Inicio de sesión",
     "login_fallido": "Inicio de sesión fallido",
+    "visita": "Ingreso con sesión abierta",
     "logout": "Cierre de sesión",
     "consulta": "Consulta",
     "excel_solicitado": "Excel solicitado",

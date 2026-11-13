@@ -56,10 +56,17 @@ def session_user(request):
     return Response({"username": user.username, "email": user.email, "is_staff": user.is_staff, "is_superuser": user.is_superuser})
 
 
+# A session open for weeks never goes through login again, so coming back after this pause counts as a visit.
+PAUSA_VISITA = timedelta(minutes=30)
+
+
 def _registrar_presencia(request):
     if not request.session.session_key:
         request.session.save()
+    anterior = PresenciaUsuario.objects.filter(session_key=request.session.session_key).values_list("last_seen", flat=True).first()
     PresenciaUsuario.objects.update_or_create(session_key=request.session.session_key, defaults={"user": request.user})
+    if anterior is None or timezone.now() - anterior > PAUSA_VISITA:
+        registrar(request, "visita", "acceso")
 
 
 @api_view(["POST"])
@@ -185,7 +192,7 @@ def actividad(request):
     page = Paginator(qs, ACTIVIDAD_POR_PAGINA).get_page(request.query_params.get("pagina", 1))
     # The summary ignores the action filter, so it always shows every kind of use of the chosen users and dates.
     resumen = _actividad_filtrada(request, con_accion=False).order_by().values("usuario_nombre").annotate(
-        ingresos=Count("id", filter=Q(accion="login")),
+        ingresos=Count("id", filter=Q(accion__in=("login", "visita"))),
         fallidos=Count("id", filter=Q(accion="login_fallido")),
         consultas=Count("id", filter=Q(accion="consulta")),
         excel=Count("id", filter=Q(accion="excel_descargado")),
